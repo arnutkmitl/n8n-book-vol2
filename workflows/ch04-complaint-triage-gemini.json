@@ -1,5 +1,5 @@
 {
-  "name": "ch04 คัดแยกเรื่องร้องเรียน (OpenAI)",
+  "name": "ch04 คัดแยกเรื่องร้องเรียน (Gemini)",
   "nodes": [
     {
       "id": "c1",
@@ -10,10 +10,10 @@
         0,
         0
       ],
-      "webhookId": "ch04-complaint-openai",
+      "webhookId": "ch04-complaint-gemini",
       "parameters": {
         "httpMethod": "POST",
-        "path": "ch04-complaint-openai",
+        "path": "ch04-complaint-gemini",
         "responseMode": "lastNode",
         "options": {}
       }
@@ -40,25 +40,24 @@
     },
     {
       "id": "c3",
-      "name": "OpenAI Chat Model",
-      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
-      "typeVersion": 1.3,
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
       "position": [
         200,
         220
       ],
       "parameters": {
-        "model": {
-          "__rl": true,
-          "mode": "list",
-          "value": "gpt-5-mini"
-        },
-        "options": {}
+        "modelName": "models/gemini-3.5-flash-lite",
+        "options": {
+          "temperature": 0,
+          "maxOutputTokens": 512
+        }
       },
       "credentials": {
-        "openAiApi": {
+        "googlePalmApi": {
           "id": "REPLACE",
-          "name": "OpenAI account"
+          "name": "Google Gemini account"
         }
       }
     },
@@ -74,7 +73,9 @@
       "parameters": {
         "schemaType": "manual",
         "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"category\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"ถนนและทางเท้า\",\n        \"ไฟฟ้าส่องสว่าง\",\n        \"ขยะและความสะอาด\",\n        \"น้ำและท่อระบายน้ำ\",\n        \"เหตุรำคาญ\",\n        \"อื่น ๆ\"\n      ],\n      \"description\": \"ประเภทเรื่องร้องเรียน\"\n    },\n    \"urgency\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"ด่วนมาก\",\n        \"ด่วน\",\n        \"ปกติ\"\n      ],\n      \"description\": \"ความเร่งด่วน\"\n    },\n    \"location\": {\n      \"type\": \"string\",\n      \"description\": \"สถานที่ตามที่ผู้ร้องระบุ หรือ ไม่ระบุ\"\n    },\n    \"summary\": {\n      \"type\": \"string\",\n      \"description\": \"สรุปเรื่องหนึ่งประโยค\"\n    },\n    \"callback\": {\n      \"type\": \"boolean\",\n      \"description\": \"ผู้ร้องต้องการให้ติดต่อกลับหรือไม่\"\n    }\n  },\n  \"required\": [\n    \"category\",\n    \"urgency\",\n    \"location\",\n    \"summary\",\n    \"callback\"\n  ]\n}",
-        "autoFix": false
+        "autoFix": true,
+        "customizeRetryPrompt": true,
+        "prompt": "=Original complaint text (use ONLY facts from this text):\n--------------\n{{ $('รับเรื่องร้องเรียน').item.json.body.text.replace(/[{}]/g, '') }}\n--------------\nInstructions:\n--------------\n{instructions}\n--------------\nCompletion:\n--------------\n{completion}\n--------------\n\nThe Completion above did not satisfy the Instructions.\nError:\n--------------\n{error}\n--------------\n\nAnswer again with JSON only.\nThe JSON must have exactly one top-level key named \"output\",\nand every field (category, urgency, location, summary, callback) must be inside \"output\"."
       }
     },
     {
@@ -288,17 +289,6 @@
         ]
       ]
     },
-    "OpenAI Chat Model": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Structured Output Parser": {
       "ai_outputParser": [
         [
@@ -355,6 +345,22 @@
           {
             "node": "ส่งเจ้าหน้าที่ตรวจ",
             "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Structured Output Parser",
+            "type": "ai_languageModel",
             "index": 0
           }
         ]

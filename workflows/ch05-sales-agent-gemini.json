@@ -1,5 +1,5 @@
 {
-  "name": "ch05 Agent ฝ่ายขาย (OpenAI)",
+  "name": "ch05 Agent ฝ่ายขาย (Gemini)",
   "nodes": [
     {
       "id": "a1",
@@ -10,7 +10,7 @@
         0,
         0
       ],
-      "webhookId": "ch05-sales-agent-openai",
+      "webhookId": "ch05-sales-agent-gemini",
       "parameters": {
         "options": {}
       }
@@ -34,25 +34,23 @@
     },
     {
       "id": "a3",
-      "name": "OpenAI Chat Model",
-      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
-      "typeVersion": 1.3,
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
       "position": [
         -100,
         260
       ],
       "parameters": {
-        "model": {
-          "__rl": true,
-          "mode": "list",
-          "value": "gpt-5-mini"
-        },
-        "options": {}
+        "modelName": "models/gemini-3.5-flash-lite",
+        "options": {
+          "temperature": 0
+        }
       },
       "credentials": {
-        "openAiApi": {
+        "googlePalmApi": {
           "id": "REPLACE",
-          "name": "OpenAI account"
+          "name": "Google Gemini account"
         }
       }
     },
@@ -240,17 +238,6 @@
         ]
       ]
     },
-    "OpenAI Chat Model": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Postgres Chat Memory": {
       "ai_memory": [
         [
@@ -301,6 +288,17 @@
           {
             "node": "AI Agent",
             "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
             "index": 0
           }
         ]

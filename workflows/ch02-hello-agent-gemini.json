@@ -1,5 +1,5 @@
 {
-  "name": "ch02 สวัสดี Agent (OpenAI)",
+  "name": "ch02 สวัสดี Agent (Gemini)",
   "nodes": [
     {
       "id": "a1",
@@ -10,7 +10,7 @@
         0,
         0
       ],
-      "webhookId": "ch02-hello-agent-openai",
+      "webhookId": "ch02-hello-agent-gemini",
       "parameters": {
         "options": {}
       }
@@ -33,25 +33,23 @@
     },
     {
       "id": "a3",
-      "name": "OpenAI Chat Model",
-      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
-      "typeVersion": 1.3,
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
       "position": [
         160,
         220
       ],
       "parameters": {
-        "model": {
-          "__rl": true,
-          "mode": "list",
-          "value": "gpt-5-mini"
-        },
-        "options": {}
+        "modelName": "models/gemini-3.5-flash-lite",
+        "options": {
+          "temperature": 0.2
+        }
       },
       "credentials": {
-        "openAiApi": {
+        "googlePalmApi": {
           "id": "REPLACE",
-          "name": "OpenAI account"
+          "name": "Google Gemini account"
         }
       }
     },
@@ -81,23 +79,23 @@
         ]
       ]
     },
-    "OpenAI Chat Model": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Simple Memory": {
       "ai_memory": [
         [
           {
             "node": "AI Agent",
             "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
             "index": 0
           }
         ]
