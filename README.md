@@ -20,8 +20,8 @@ scripts/      สคริปต์ทดสอบและสคริปต์
 ## เริ่มต้น
 
 ```
-git clone https://github.com/USERNAME/n8n-v2-files.git
-cd n8n-v2-files/lab
+git clone https://github.com/arnutkmitl/n8n-book-vol2.git
+cd n8n-book-vol2/lab
 cp .env.example .env
 ```
 
