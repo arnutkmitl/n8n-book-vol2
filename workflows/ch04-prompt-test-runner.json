@@ -1,0 +1,148 @@
+{
+  "name": "ch04 รันชุดทดสอบ prompt",
+  "nodes": [
+    {
+      "id": "r1",
+      "name": "เริ่มทดสอบ",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "r2",
+      "name": "อ่านชุดทดสอบ",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM prompt_tests ORDER BY id;",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "r5",
+      "name": "ทีละข้อความ",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "r3",
+      "name": "ส่งเข้า workflow คัดแยก",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        120
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/ch04-complaint",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{ $json.text }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "r4",
+      "name": "เทียบคำตอบ",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        -120
+      ],
+      "parameters": {
+        "jsCode": "// เทียบผลของ Agent กับคำตอบที่คาดหวัง แล้วสรุปเป็นคะแนน\nconst tests = $('อ่านชุดทดสอบ').all().map(i => i.json);\nconst results = $input.all().map((item, i) => {\n  const t = tests[i];\n  const out = item.json.output || {};\n  return {\n    id: t.id,\n    category_ok: out.category === t.expected_category,\n    urgency_ok: out.urgency === t.expected_urgency,\n    callback_ok: out.callback === t.expected_callback,\n    got: `${out.category} / ${out.urgency} / ${out.callback}`,\n    expected: `${t.expected_category} / ${t.expected_urgency} / ${t.expected_callback}`,\n  };\n});\nconst count = (k) => results.filter(r => r[k]).length;\nconst wrong = results.filter(r => !(r.category_ok && r.urgency_ok && r.callback_ok));\nreturn [{ json: {\n  total: results.length,\n  category: count('category_ok'),\n  urgency: count('urgency_ok'),\n  callback: count('callback_ok'),\n  wrong,\n} }];"
+      }
+    }
+  ],
+  "connections": {
+    "เริ่มทดสอบ": {
+      "main": [
+        [
+          {
+            "node": "อ่านชุดทดสอบ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "อ่านชุดทดสอบ": {
+      "main": [
+        [
+          {
+            "node": "ทีละข้อความ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ทีละข้อความ": {
+      "main": [
+        [
+          {
+            "node": "เทียบคำตอบ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ส่งเข้า workflow คัดแยก",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ส่งเข้า workflow คัดแยก": {
+      "main": [
+        [
+          {
+            "node": "ทีละข้อความ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

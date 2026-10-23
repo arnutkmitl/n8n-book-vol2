@@ -1,0 +1,55 @@
+# ห้องทดลอง AI Agent ของหนังสือ n8n เล่ม 2
+# n8n + PostgreSQL (pgvector) + Ollama
+# ทดสอบกับ n8n 2.43.7 / Docker Engine 29
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: n8n
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d n8n"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  n8n:
+    image: n8nio/n8n:2.43.7
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      GENERIC_TIMEZONE: Asia/Bangkok
+      TZ: Asia/Bangkok
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      # n8n 2.x อ่านเขียนไฟล์ได้เฉพาะโฟลเดอร์ที่อนุญาต (ค่าเริ่มต้น ~/.n8n-files)
+      N8N_RESTRICT_FILE_ACCESS_TO: /files
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./files:/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+
+volumes:
+  pg_data:
+  n8n_data:
+  ollama_data:

@@ -1,0 +1,166 @@
+{
+  "name": "ch12 แจ้งผู้ดูแลเมื่อ workflow ล้มเหลว",
+  "nodes": [
+    {
+      "id": "x1",
+      "name": "เมื่อ workflow ล้มเหลว",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "x2",
+      "name": "สรุป error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Error Trigger ส่งข้อมูลสองแบบ แบบแรกเมื่อ node ใดพังระหว่างทำงาน (มี execution)\n// แบบที่สองเมื่อ trigger พังก่อนเริ่ม execution (มี trigger แทน)\nconst d = $json;\nconst exec = d.execution ?? {};\nconst err = exec.error ?? d.trigger?.error ?? {};\nconst when = DateTime.now().setZone('Asia/Bangkok').toFormat('dd/MM/yyyy HH:mm:ss');\nreturn { json: {\n  workflow_id: d.workflow?.id ?? '',\n  workflow_name: d.workflow?.name ?? '(ไม่ทราบชื่อ)',\n  execution_id: exec.id ?? '',\n  execution_url: exec.url ?? '',\n  failed_node: exec.lastNodeExecuted ?? err.node?.name ?? '',\n  // ตัดข้อความ error ให้สั้น และไม่แนบข้อมูลที่ผู้ใช้ส่งเข้ามา เพราะอาจมีข้อมูลส่วนบุคคล\n  message: String(err.message ?? 'ไม่มีข้อความ error').slice(0, 500),\n  mode: exec.mode ?? 'trigger',\n  when,\n} };",
+        "mode": "runOnceForEachItem"
+      }
+    },
+    {
+      "id": "x3",
+      "name": "บันทึก error",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- เก็บประวัติความล้มเหลวไว้ดูแนวโน้ม และใช้นับว่าวันนี้แจ้งไปแล้วกี่ครั้ง\nINSERT INTO ops_errors (workflow_id, workflow_name, execution_id, failed_node, message)\nVALUES ($1, $2, $3, $4, $5)\n-- subquery ใน RETURNING มองไม่เห็นแถวที่เพิ่ง insert จึงได้จำนวนครั้งก่อนหน้าในชั่วโมงนี้\nRETURNING (SELECT count(*) FROM ops_errors\n           WHERE workflow_id = $1 AND created_at > now() - interval '1 hour') AS earlier_in_hour;",
+        "options": {
+          "queryReplacement": "={{ [$json.workflow_id, $json.workflow_name, $json.execution_id, $json.failed_node, $json.message] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "x4",
+      "name": "แจ้งไม่เกิน 3 ครั้งต่อชั่วโมง",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c",
+              "leftValue": "={{ Number($json.earlier_in_hour ?? 0) }}",
+              "rightValue": 3,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "x5",
+      "name": "อีเมลถึงผู้ดูแล",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        880,
+        -20
+      ],
+      "parameters": {
+        "resource": "email",
+        "operation": "send",
+        "fromEmail": "n8n-alert@bansuan.test",
+        "toEmail": "it-admin@bansuan.test",
+        "subject": "=[n8n] {{ $('สรุป error').item.json.workflow_name }} ล้มเหลวที่ {{ $('สรุป error').item.json.failed_node }}",
+        "emailFormat": "text",
+        "text": "=workflow: {{ $('สรุป error').item.json.workflow_name }} (id {{ $('สรุป error').item.json.workflow_id }})\nnode ที่พัง: {{ $('สรุป error').item.json.failed_node }}\nเวลา: {{ $('สรุป error').item.json.when }}\nข้อความ: {{ $('สรุป error').item.json.message }}\n\nเปิดดู execution: {{ $('สรุป error').item.json.execution_url }}\n\nอีเมลนี้ส่งจาก workflow \"ch12 แจ้งผู้ดูแลเมื่อ workflow ล้มเหลว\" ",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE",
+          "name": "Mailpit lab"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "เมื่อ workflow ล้มเหลว": {
+      "main": [
+        [
+          {
+            "node": "สรุป error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "สรุป error": {
+      "main": [
+        [
+          {
+            "node": "บันทึก error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "บันทึก error": {
+      "main": [
+        [
+          {
+            "node": "แจ้งไม่เกิน 3 ครั้งต่อชั่วโมง",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "แจ้งไม่เกิน 3 ครั้งต่อชั่วโมง": {
+      "main": [
+        [
+          {
+            "node": "อีเมลถึงผู้ดูแล",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

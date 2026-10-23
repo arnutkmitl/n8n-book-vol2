@@ -1,0 +1,124 @@
+{
+  "name": "ch09 รับเรื่องทางแบบฟอร์ม",
+  "nodes": [
+    {
+      "id": "f1",
+      "name": "แบบฟอร์มแจ้งเรื่อง",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "ch09-form-bansuan",
+      "parameters": {
+        "formTitle": "แจ้งเรื่องร้องเรียนและขอรับบริการ เทศบาลเมืองบ้านสวน",
+        "formDescription": "ข้อมูลของท่านใช้เพื่อติดต่อกลับเรื่องที่แจ้งเท่านั้น ห้ามกรอกเลขบัตรประชาชน",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "ชื่อผู้แจ้ง",
+              "fieldName": "sender",
+              "fieldType": "text",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "เบอร์โทรหรืออีเมลสำหรับติดต่อกลับ",
+              "fieldName": "contact",
+              "fieldType": "text"
+            },
+            {
+              "fieldLabel": "หัวเรื่อง",
+              "fieldName": "subject",
+              "fieldType": "text",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "รายละเอียด",
+              "fieldName": "detail",
+              "fieldType": "textarea",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "สถานที่",
+              "fieldName": "location",
+              "fieldType": "text"
+            }
+          ]
+        },
+        "responseMode": "lastNode",
+        "options": {
+          "path": "bansuan-request",
+          "appendAttribution": false
+        }
+      }
+    },
+    {
+      "id": "f2",
+      "name": "บันทึกเรื่องรับ",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO citizen_requests (channel, kind, sender, contact, subject, message, location, source_ref)\nVALUES ($1, 'incoming', $2, $3, $4, $5, $6, $7)\nON CONFLICT (source_ref) WHERE source_ref IS NOT NULL DO NOTHING\nRETURNING id, ticket_no;",
+        "options": {
+          "queryReplacement": "={{ ['form', $json.sender, $json.contact, $json.subject, $json.detail, $json.location || null, null] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "f3",
+      "name": "แจ้งเลขรับเรื่อง",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "text",
+        "completionTitle": "รับเรื่องแล้ว",
+        "completionMessage": "=เลขรับเรื่อง {{ $json.ticket_no }} เทศบาลจะแจ้งผลการดำเนินการภายใน 15 วันทำการ ถ้าเป็นเหตุเร่งด่วน โทรสายด่วน 0 4400 1299 ตลอด 24 ชั่วโมง"
+      }
+    }
+  ],
+  "connections": {
+    "แบบฟอร์มแจ้งเรื่อง": {
+      "main": [
+        [
+          {
+            "node": "บันทึกเรื่องรับ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "บันทึกเรื่องรับ": {
+      "main": [
+        [
+          {
+            "node": "แจ้งเลขรับเรื่อง",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

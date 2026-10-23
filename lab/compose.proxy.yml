@@ -1,0 +1,22 @@
+# บทที่ 12 reverse proxy ด้วย Caddy
+# ใช้คู่กับไฟล์หลัก: docker compose -f docker-compose.yml -f compose.proxy.yml up -d
+# ทดสอบกับ caddy:2 ในเครื่อง ที่ http://127.0.0.1:8088 (ระบบจริงเปิดพอร์ต 80 และ 443)
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8088:8088"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+
+  n8n:
+    environment:
+      # URL ที่ภายนอกใช้เรียก webhook n8n ใช้ค่านี้แสดง URL บนหน้าจอ node
+      WEBHOOK_URL: http://127.0.0.1:8088/
+      # n8n อยู่หลัง proxy หนึ่งชั้น ให้เชื่อ X-Forwarded-For จาก proxy
+      N8N_PROXY_HOPS: "1"
+
+volumes:
+  caddy_data:

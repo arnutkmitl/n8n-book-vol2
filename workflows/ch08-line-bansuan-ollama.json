@@ -1,0 +1,1246 @@
+{
+  "name": "ch08 น้องบ้านสวน LINE OA",
+  "nodes": [
+    {
+      "id": "w1",
+      "name": "รับ webhook จาก LINE",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "ch08-line-bansuan",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "line-bansuan",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      }
+    },
+    {
+      "id": "w2",
+      "name": "คำนวณลายเซ็น",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "action": "hmac",
+        "binaryData": true,
+        "binaryPropertyName": "data",
+        "type": "SHA256",
+        "dataPropertyName": "expected_signature",
+        "encoding": "base64"
+      },
+      "credentials": {
+        "crypto": {
+          "id": "REPLACE",
+          "name": "LINE channel secret"
+        }
+      }
+    },
+    {
+      "id": "w3",
+      "name": "ลายเซ็นถูกต้องหรือไม่",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        400,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "s1",
+              "leftValue": "={{ $json.expected_signature }}",
+              "rightValue": "={{ $json.headers['x-line-signature'] }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "w4",
+      "name": "ตอบ LINE ว่าได้รับแล้ว",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        600,
+        -100
+      ],
+      "parameters": {
+        "respondWith": "noData",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "w5",
+      "name": "ปฏิเสธคำขอ",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        600,
+        100
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "invalid signature",
+        "options": {
+          "responseCode": 401
+        }
+      }
+    },
+    {
+      "id": "w6",
+      "name": "แยกทีละเหตุการณ์",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        800,
+        -100
+      ],
+      "parameters": {
+        "fieldToSplitOut": "body.events",
+        "options": {}
+      }
+    },
+    {
+      "id": "w7",
+      "name": "เตรียมข้อมูล",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "// ค่าตั้งของระบบ แก้ที่นี่ที่เดียว\n// ระหว่างทดสอบใช้ LINE API จำลองในเครื่อง เมื่อเชื่อม LINE OA จริงให้เปลี่ยนเป็น https://api.line.me\nconst LINE_API = 'http://localhost:5678/webhook/mock-line';\n\nconst out = [];\nfor (const item of $input.all()) {\n  const ev = item.json;\n  // รับเฉพาะเหตุการณ์จากแชตหนึ่งต่อหนึ่ง ข้ามข้อความจากกลุ่มและเหตุการณ์ที่ไม่มี reply token\n  if (!ev.replyToken || ev.source?.type !== 'user') continue;\n  // เวลาทำการคิดจากเวลาที่ประชาชนส่งข้อความ จันทร์ถึงศุกร์ 08:30 ถึง 16:30 น.\n  const t = DateTime.fromMillis(ev.timestamp, { zone: 'Asia/Bangkok' });\n  const minutes = t.hour * 60 + t.minute;\n  const inOffice = t.weekday <= 5 && minutes >= 8 * 60 + 30 && minutes < 16 * 60 + 30;\n  let kind = 'other';\n  if (ev.type === 'follow') kind = 'follow';\n  else if (ev.type === 'message' && ev.message.type === 'text') kind = 'text';\n  out.push({ json: {\n    kind,\n    message_type: ev.message?.type ?? ev.type,\n    text: ev.message?.text ?? '',\n    user_id: ev.source.userId,\n    session_key: 'line:' + ev.source.userId,\n    reply_token: ev.replyToken,\n    in_office_hours: inOffice,\n    received_at: t.toFormat('yyyy-MM-dd HH:mm'),\n    line_api: LINE_API,\n  } });\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "k1",
+      "name": "ชนิดข้อความ",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1200,
+        -100
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.kind }}",
+                    "rightValue": "text",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ข้อความ"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.kind }}",
+                    "rightValue": "follow",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "เพิ่มเพื่อน"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.kind }}",
+                    "rightValue": "other",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "รูปภาพ สติกเกอร์ อื่น ๆ"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "k2",
+      "name": "แสดงสถานะกำลังพิมพ์",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        -200
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.line_api }}/v2/bot/chat/loading/start",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chatId: $json.user_id, loadingSeconds: 60 }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE",
+          "name": "LINE channel access token"
+        }
+      }
+    },
+    {
+      "id": "k3",
+      "name": "ตรวจเลขบัตรประชาชน",
+      "type": "@n8n/n8n-nodes-langchain.guardrails",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        -200
+      ],
+      "parameters": {
+        "operation": "classify",
+        "text": "={{ $('เตรียมข้อมูล').item.json.text }}",
+        "guardrails": {
+          "customRegex": {
+            "regex": [
+              {
+                "name": "THAI_ID",
+                "value": "/\\b\\d[-\\s]?\\d{4}[-\\s]?\\d{5}[-\\s]?\\d{2}[-\\s]?\\d\\b/g"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "k4",
+      "name": "ตอบเรื่องเลขบัตร",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1800,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "k40",
+              "name": "reply_text",
+              "type": "string",
+              "value": "เพื่อความปลอดภัยของข้อมูลส่วนบุคคล กรุณาอย่าส่งเลขบัตรประชาชนทางแชตค่ะ น้องบ้านสวนไม่ได้บันทึกข้อความนี้ เรื่องที่ต้องใช้เลขบัตร กรุณาติดต่อสำนักงานเทศบาล โทร 0 4400 1234 ในเวลาราชการค่ะ"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "k5",
+      "name": "ข้อความต้อนรับ",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1400,
+        200
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "k50",
+              "name": "reply_text",
+              "type": "string",
+              "value": "สวัสดีค่ะ น้องบ้านสวนเป็นผู้ช่วยตอบคำถามทาง LINE ของเทศบาลเมืองบ้านสวน ถามเรื่องค่าธรรมเนียมขยะ ภาษีที่ดิน ใบอนุญาตก่อสร้าง การขายของในที่สาธารณะ และบริการของเทศบาลได้ หรือพิมพ์แจ้งเรื่องร้องเรียนพร้อมสถานที่ได้เลยค่ะ"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "k6",
+      "name": "ตอบข้อความที่ไม่ใช่ตัวอักษร",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1400,
+        380
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "k60",
+              "name": "reply_text",
+              "type": "string",
+              "value": "ตอนนี้น้องบ้านสวนอ่านได้เฉพาะข้อความตัวอักษรค่ะ ถ้าต้องการแจ้งเรื่องร้องเรียน กรุณาพิมพ์รายละเอียดและสถานที่ เจ้าหน้าที่จะติดต่อขอรูปภาพเพิ่มเติมภายหลังค่ะ"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c1",
+      "name": "จัดประเภทข้อความ",
+      "type": "@n8n/n8n-nodes-langchain.textClassifier",
+      "typeVersion": 1.1,
+      "position": [
+        1800,
+        -300
+      ],
+      "parameters": {
+        "inputText": "={{ $('เตรียมข้อมูล').item.json.text }}",
+        "categories": {
+          "categories": [
+            {
+              "category": "ถามข้อมูล",
+              "description": "ถามข้อมูลบริการของเทศบาล เช่น ค่าธรรมเนียม ภาษี ใบอนุญาต เอกสารที่ต้องใช้ วันเวลาทำการ เบอร์ติดต่อ รวมถึงคำถามต่อเนื่องสั้น ๆ เช่น แล้วจ่ายที่ไหน ใช้เอกสารอะไร"
+            },
+            {
+              "category": "ร้องเรียน",
+              "description": "แจ้งปัญหาหรือความเดือดร้อนให้เทศบาลแก้ไข เช่น ขยะไม่ได้เก็บ ไฟถนนดับ ถนนชำรุด น้ำท่วมขัง เสียงดัง กลิ่นเหม็น หรือร้องเรียนเจ้าหน้าที่"
+            },
+            {
+              "category": "ขอคุยกับเจ้าหน้าที่",
+              "description": "ขอคุยกับเจ้าหน้าที่หรือคนจริง ขอให้เจ้าหน้าที่ติดต่อกลับ"
+            },
+            {
+              "category": "ทักทาย",
+              "description": "ทักทาย ขอบคุณ หรือข้อความสั้นที่ไม่มีคำถามและไม่ได้แจ้งปัญหา เช่น สวัสดีค่ะ ขอบคุณครับ โอเค"
+            }
+          ]
+        },
+        "options": {
+          "fallback": "other"
+        }
+      }
+    },
+    {
+      "id": "c2",
+      "name": "Ollama จัดประเภท",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        -100
+      ],
+      "parameters": {
+        "model": "qwen2.5:3b",
+        "options": {
+          "temperature": 0,
+          "numCtx": 8192,
+          "numPredict": 256
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "q1",
+      "name": "โหลดประวัติแชต",
+      "type": "@n8n/n8n-nodes-langchain.memoryManager",
+      "typeVersion": 1.1,
+      "position": [
+        2100,
+        -500
+      ],
+      "alwaysOutputData": true,
+      "parameters": {
+        "mode": "load",
+        "simplifyOutput": true,
+        "options": {
+          "groupMessages": true
+        }
+      }
+    },
+    {
+      "id": "q2",
+      "name": "ประวัติแชต (อ่าน)",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        2100,
+        -300
+      ],
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('เตรียมข้อมูล').item.json.session_key }}",
+        "tableName": "line_chat_histories",
+        "contextWindowLength": 4
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "q3",
+      "name": "เตรียมคำถาม",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2300,
+        -500
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// ข้อความสั้นที่ตามหลังคำถามอื่น มักเป็นคำถามต่อเนื่อง เช่น \"แล้วร้านอาหารล่ะ\"\n// นำคำถามสองข้อล่าสุดของคนเดียวกันมาประกอบ เพื่อให้ค้นเอกสารเจอเรื่องที่คุยกันอยู่\nconst p = $('เตรียมข้อมูล').item.json;\nconst previous = ($json.messages ?? []).map(m => m.human).filter(Boolean).slice(-2);\nconst isFollowUp = previous.length > 0 && p.text.length <= 35;\nconst question = isFollowUp\n  ? `คำถามก่อนหน้า: ${previous.join(' / ')}\nคำถามล่าสุด: ${p.text}`\n  : p.text;\nreturn { json: { question, is_follow_up: isFollowUp } };"
+      }
+    },
+    {
+      "id": "q9",
+      "name": "ถามตอบจากเอกสาร",
+      "type": "@n8n/n8n-nodes-langchain.chainRetrievalQa",
+      "typeVersion": 1.7,
+      "position": [
+        2500,
+        -500
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.question }}",
+        "options": {
+          "systemPromptTemplate": "คุณคือเจ้าหน้าที่ตอบคำถามประชาชนของเทศบาลเมืองบ้านสวน\nตอบจากข้อความในส่วน \"เอกสารที่ค้นได้\" ด้านล่างเท่านั้น ห้ามใช้ความรู้ทั่วไปหรือเดาตัวเลข\nถ้าเอกสารที่ค้นได้ไม่มีคำตอบ ให้ตอบว่า \"ยังไม่มีข้อมูลเรื่องนี้ในเอกสารของเทศบาล ติดต่อ 0 4400 1234 ค่ะ\"\nตอบภาษาสุภาพที่คนทั่วไปเข้าใจ ลงท้ายด้วย ค่ะ ไม่เกินห้าบรรทัด\nบรรทัดสุดท้ายเขียนว่า ที่มา: ตามด้วยชื่อเอกสารที่ขึ้นต้นด้วยคำว่า \"เอกสาร:\" ที่ใช้ตอบ\nถ้าคำถามมีทั้งคำถามก่อนหน้าและคำถามล่าสุด ให้ตอบเฉพาะคำถามล่าสุด โดยใช้คำถามก่อนหน้าเป็นบริบท\n----------------\nเอกสารที่ค้นได้:\n{context}"
+        }
+      }
+    },
+    {
+      "id": "q10",
+      "name": "Ollama ตอบคำถาม",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        3000,
+        -300
+      ],
+      "parameters": {
+        "model": "qwen2.5:3b",
+        "options": {
+          "temperature": 0,
+          "numCtx": 8192,
+          "numPredict": 512
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "q11",
+      "name": "Vector Store Retriever",
+      "type": "@n8n/n8n-nodes-langchain.retrieverVectorStore",
+      "typeVersion": 1,
+      "position": [
+        3200,
+        -300
+      ],
+      "parameters": {
+        "topK": 4
+      }
+    },
+    {
+      "id": "q12",
+      "name": "Postgres PGVector Store",
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePGVector",
+      "typeVersion": 1.3,
+      "position": [
+        3200,
+        -120
+      ],
+      "parameters": {
+        "mode": "retrieve",
+        "tableName": "kb_bansuan",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "q13",
+      "name": "Embeddings Ollama",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOllama",
+      "typeVersion": 1,
+      "position": [
+        3200,
+        60
+      ],
+      "parameters": {
+        "model": "bge-m3:latest"
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "q14",
+      "name": "คำตอบจากเอกสาร",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3400,
+        -500
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// LINE แสดงเครื่องหมาย Markdown เป็นตัวอักษรตรง ๆ จึงลบด้วยโค้ดแทนการสั่งโมเดล\nlet text = String($json.response ?? '').replace(/\\*\\*|__/g, '').replace(/^#+\\s*/gm, '').trim();\n// ถ้าตอบว่าไม่มีข้อมูล ให้ตัดบรรทัดที่มาออก เพราะไม่มีเอกสารใดใช้ตอบจริง\nif (text.includes('ยังไม่มีข้อมูลเรื่องนี้')) {\n  text = 'ยังไม่มีข้อมูลเรื่องนี้ในเอกสารของเทศบาล ติดต่อ 0 4400 1234 ในเวลาราชการค่ะ';\n}\nreturn { json: { reply_text: text } };"
+      }
+    },
+    {
+      "id": "q15",
+      "name": "บันทึกประวัติแชต",
+      "type": "@n8n/n8n-nodes-langchain.memoryManager",
+      "typeVersion": 1.1,
+      "position": [
+        3800,
+        -700
+      ],
+      "parameters": {
+        "mode": "insert",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "user",
+              "message": "={{ $('เตรียมข้อมูล').item.json.text }}",
+              "hideFromUI": false
+            },
+            {
+              "type": "ai",
+              "message": "={{ $json.reply_text }}",
+              "hideFromUI": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "q16",
+      "name": "ประวัติแชต (บันทึก)",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        3800,
+        -500
+      ],
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('เตรียมข้อมูล').item.json.session_key }}",
+        "tableName": "line_chat_histories",
+        "contextWindowLength": 4
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "h1",
+      "name": "เรื่องร้องเรียน",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2100,
+        -100
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "h10",
+              "name": "kind",
+              "type": "string",
+              "value": "complaint"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "h2",
+      "name": "ขอคุยกับเจ้าหน้าที่",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2100,
+        60
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "h20",
+              "name": "kind",
+              "type": "string",
+              "value": "staff"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "h3",
+      "name": "บันทึกเรื่องส่งต่อเจ้าหน้าที่",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2300,
+        -20
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO citizen_requests (channel, kind, line_user_id, message)\nVALUES ('line', $1, $2, $3)\nRETURNING ticket_no, kind, created_at;",
+        "options": {
+          "queryReplacement": "={{ [$json.kind, $('เตรียมข้อมูล').item.json.user_id, $('เตรียมข้อมูล').item.json.text] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "h4",
+      "name": "แจ้งงานรับเรื่อง",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2500,
+        -20
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "resource": "email",
+        "operation": "send",
+        "fromEmail": "line-bot@bansuan.test",
+        "toEmail": "saraban@bansuan.test",
+        "subject": "={{ $json.kind === 'complaint' ? 'เรื่องร้องเรียนใหม่' : 'ประชาชนขอคุยกับเจ้าหน้าที่' }} ทาง LINE เลขที่ {{ $json.ticket_no }}",
+        "emailFormat": "text",
+        "text": "=เลขที่: {{ $json.ticket_no }}\nเวลา: {{ $('เตรียมข้อมูล').item.json.received_at }}\nLINE userId: {{ $('เตรียมข้อมูล').item.json.user_id }}\n\nข้อความ:\n{{ $('เตรียมข้อมูล').item.json.text }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE",
+          "name": "Mailpit lab"
+        }
+      }
+    },
+    {
+      "id": "h5",
+      "name": "ข้อความแจ้งรับเรื่อง",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2700,
+        -20
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// ข้อความแจ้งประชาชนหลังบันทึกเรื่อง ต่างกันตามประเภทเรื่องและเวลาทำการ\nconst p = $('เตรียมข้อมูล').item.json;\nconst r = $('บันทึกเรื่องส่งต่อเจ้าหน้าที่').item.json;\nlet text;\nif (r.kind === 'complaint') {\n  text = `รับเรื่องร้องเรียนแล้วค่ะ เลขที่ ${r.ticket_no} เจ้าหน้าที่จะตรวจสอบและแจ้งผลภายใน 15 วันทำการ`;\n  if (!p.in_office_hours) text += ' ขณะนี้อยู่นอกเวลาราชการ เจ้าหน้าที่จะเริ่มดำเนินการในวันทำการถัดไป';\n  text += '\\nถ้าเป็นเหตุเร่งด่วนที่อันตรายต่อชีวิตหรือทรัพย์สิน โทรสายด่วน 0 4400 1299 ได้ตลอด 24 ชั่วโมงค่ะ';\n} else {\n  text = p.in_office_hours\n    ? `รับเรื่องแล้วค่ะ เลขที่ ${r.ticket_no} เจ้าหน้าที่จะตอบกลับในแชตนี้ภายในเวลาทำการวันนี้ ถ้าต้องการคุยทันที โทร 0 4400 1234 ค่ะ`\n    : `รับเรื่องแล้วค่ะ เลขที่ ${r.ticket_no} ขณะนี้อยู่นอกเวลาราชการ (จันทร์ถึงศุกร์ 08:30 ถึง 16:30 น.) เจ้าหน้าที่จะตอบกลับในแชตนี้วันทำการถัดไปค่ะ`;\n}\nreturn { json: { reply_text: text } };"
+      }
+    },
+    {
+      "id": "r1",
+      "name": "คำตอบที่จะส่ง",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4000,
+        -100
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "r10",
+              "name": "reply_text",
+              "type": "string",
+              "value": "={{ $json.reply_text }}"
+            },
+            {
+              "id": "r11",
+              "name": "reply_token",
+              "type": "string",
+              "value": "={{ $('เตรียมข้อมูล').item.json.reply_token }}"
+            },
+            {
+              "id": "r12",
+              "name": "user_id",
+              "type": "string",
+              "value": "={{ $('เตรียมข้อมูล').item.json.user_id }}"
+            },
+            {
+              "id": "r13",
+              "name": "line_api",
+              "type": "string",
+              "value": "={{ $('เตรียมข้อมูล').item.json.line_api }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "r2",
+      "name": "ตอบกลับด้วย reply token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4200,
+        -100
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.line_api }}/v2/bot/message/reply",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ replyToken: $json.reply_token, messages: [{ type: 'text', text: $json.reply_text.slice(0, 5000) }] }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE",
+          "name": "LINE channel access token"
+        }
+      }
+    },
+    {
+      "id": "r3",
+      "name": "ส่งแบบ push แทน",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4400,
+        60
+      ],
+      "onError": "stopWorkflow",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('คำตอบที่จะส่ง').item.json.line_api }}/v2/bot/message/push",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ to: $('คำตอบที่จะส่ง').item.json.user_id, messages: [{ type: 'text', text: $('คำตอบที่จะส่ง').item.json.reply_text.slice(0, 5000) }] }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE",
+          "name": "LINE channel access token"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "รับ webhook จาก LINE": {
+      "main": [
+        [
+          {
+            "node": "คำนวณลายเซ็น",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "คำนวณลายเซ็น": {
+      "main": [
+        [
+          {
+            "node": "ลายเซ็นถูกต้องหรือไม่",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ลายเซ็นถูกต้องหรือไม่": {
+      "main": [
+        [
+          {
+            "node": "ตอบ LINE ว่าได้รับแล้ว",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ปฏิเสธคำขอ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ตอบ LINE ว่าได้รับแล้ว": {
+      "main": [
+        [
+          {
+            "node": "แยกทีละเหตุการณ์",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "แยกทีละเหตุการณ์": {
+      "main": [
+        [
+          {
+            "node": "เตรียมข้อมูล",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "เตรียมข้อมูล": {
+      "main": [
+        [
+          {
+            "node": "ชนิดข้อความ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ชนิดข้อความ": {
+      "main": [
+        [
+          {
+            "node": "แสดงสถานะกำลังพิมพ์",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ข้อความต้อนรับ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ตอบข้อความที่ไม่ใช่ตัวอักษร",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "แสดงสถานะกำลังพิมพ์": {
+      "main": [
+        [
+          {
+            "node": "ตรวจเลขบัตรประชาชน",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ตรวจเลขบัตรประชาชน": {
+      "main": [
+        [
+          {
+            "node": "จัดประเภทข้อความ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ตอบเรื่องเลขบัตร",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama จัดประเภท": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "จัดประเภทข้อความ",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "จัดประเภทข้อความ": {
+      "main": [
+        [
+          {
+            "node": "โหลดประวัติแชต",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "เรื่องร้องเรียน",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ขอคุยกับเจ้าหน้าที่",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ข้อความต้อนรับ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "โหลดประวัติแชต",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ประวัติแชต (อ่าน)": {
+      "ai_memory": [
+        [
+          {
+            "node": "โหลดประวัติแชต",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "โหลดประวัติแชต": {
+      "main": [
+        [
+          {
+            "node": "เตรียมคำถาม",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "เตรียมคำถาม": {
+      "main": [
+        [
+          {
+            "node": "ถามตอบจากเอกสาร",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama ตอบคำถาม": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "ถามตอบจากเอกสาร",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vector Store Retriever": {
+      "ai_retriever": [
+        [
+          {
+            "node": "ถามตอบจากเอกสาร",
+            "type": "ai_retriever",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres PGVector Store": {
+      "ai_vectorStore": [
+        [
+          {
+            "node": "Vector Store Retriever",
+            "type": "ai_vectorStore",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Ollama": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Postgres PGVector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ถามตอบจากเอกสาร": {
+      "main": [
+        [
+          {
+            "node": "คำตอบจากเอกสาร",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ประวัติแชต (บันทึก)": {
+      "ai_memory": [
+        [
+          {
+            "node": "บันทึกประวัติแชต",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "เรื่องร้องเรียน": {
+      "main": [
+        [
+          {
+            "node": "บันทึกเรื่องส่งต่อเจ้าหน้าที่",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ขอคุยกับเจ้าหน้าที่": {
+      "main": [
+        [
+          {
+            "node": "บันทึกเรื่องส่งต่อเจ้าหน้าที่",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "บันทึกเรื่องส่งต่อเจ้าหน้าที่": {
+      "main": [
+        [
+          {
+            "node": "แจ้งงานรับเรื่อง",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "แจ้งงานรับเรื่อง": {
+      "main": [
+        [
+          {
+            "node": "ข้อความแจ้งรับเรื่อง",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "คำตอบจากเอกสาร": {
+      "main": [
+        [
+          {
+            "node": "คำตอบที่จะส่ง",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "บันทึกประวัติแชต",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ข้อความแจ้งรับเรื่อง": {
+      "main": [
+        [
+          {
+            "node": "คำตอบที่จะส่ง",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ตอบเรื่องเลขบัตร": {
+      "main": [
+        [
+          {
+            "node": "คำตอบที่จะส่ง",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ข้อความต้อนรับ": {
+      "main": [
+        [
+          {
+            "node": "คำตอบที่จะส่ง",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ตอบข้อความที่ไม่ใช่ตัวอักษร": {
+      "main": [
+        [
+          {
+            "node": "คำตอบที่จะส่ง",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "คำตอบที่จะส่ง": {
+      "main": [
+        [
+          {
+            "node": "ตอบกลับด้วย reply token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ตอบกลับด้วย reply token": {
+      "main": [
+        [],
+        [
+          {
+            "node": "ส่งแบบ push แทน",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

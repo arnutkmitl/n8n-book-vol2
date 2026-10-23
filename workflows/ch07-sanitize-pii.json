@@ -1,0 +1,72 @@
+{
+  "name": "ch07 ปิดบังข้อมูลส่วนบุคคลก่อนส่งออก",
+  "nodes": [
+    {
+      "id": "s1",
+      "name": "รับข้อความ",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "ch07-sanitize",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ch07-sanitize",
+        "responseMode": "lastNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "s2",
+      "name": "ปิดบังข้อมูลส่วนบุคคล",
+      "type": "@n8n/n8n-nodes-langchain.guardrails",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "operation": "sanitize",
+        "text": "={{ $json.body.text }}",
+        "guardrails": {
+          "pii": {
+            "value": {
+              "type": "selected",
+              "entities": [
+                "PHONE_NUMBER",
+                "EMAIL_ADDRESS"
+              ]
+            }
+          },
+          "customRegex": {
+            "regex": [
+              {
+                "name": "THAI_ID",
+                "value": "/\\b\\d[-\\s]?\\d{4}[-\\s]?\\d{5}[-\\s]?\\d{2}[-\\s]?\\d\\b/g"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "รับข้อความ": {
+      "main": [
+        [
+          {
+            "node": "ปิดบังข้อมูลส่วนบุคคล",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -1,0 +1,116 @@
+{
+  "name": "ch05 บันทึกลูกค้าสนใจ",
+  "nodes": [
+    {
+      "id": "l1",
+      "name": "เมื่อถูกเรียกจาก Agent",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "customer",
+              "type": "string"
+            },
+            {
+              "name": "phone",
+              "type": "string"
+            },
+            {
+              "name": "sku",
+              "type": "string"
+            },
+            {
+              "name": "qty",
+              "type": "number"
+            },
+            {
+              "name": "note",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "l2",
+      "name": "เพิ่มแถวในตาราง leads",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO leads (customer, phone, sku, qty, note) VALUES ($1, $2, $3, $4, $5) RETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$json.customer, $json.phone, $json.sku, $json.qty, $json.note] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "l3",
+      "name": "ข้อความตอบกลับ",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "r1",
+              "name": "result",
+              "type": "string",
+              "value": "=บันทึกข้อมูลลูกค้าสนใจแล้ว เลขที่ L-{{ $json.id }} ฝ่ายขายจะติดต่อกลับภายในหนึ่งวันทำการ"
+            }
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "เมื่อถูกเรียกจาก Agent": {
+      "main": [
+        [
+          {
+            "node": "เพิ่มแถวในตาราง leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "เพิ่มแถวในตาราง leads": {
+      "main": [
+        [
+          {
+            "node": "ข้อความตอบกลับ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

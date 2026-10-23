@@ -1,0 +1,121 @@
+{
+  "name": "ch05 Agent เรียกเครื่องมือผ่าน MCP",
+  "nodes": [
+    {
+      "id": "k1",
+      "name": "รับข้อความแชต",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "ch05-mcp-client",
+      "parameters": {
+        "options": {}
+      }
+    },
+    {
+      "id": "k2",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "options": {
+          "systemMessage": "=คุณคือผู้ช่วยฝ่ายขายของบริษัท สยามพาร์ท ซัพพลาย\nข้อมูลสินค้าและราคาต้องมาจากเครื่องมือเท่านั้น ห้ามคิดเลขเอง\nตอบภาษาไทยสุภาพ ลงท้ายด้วย ครับ",
+          "maxIterations": 6,
+          "returnIntermediateSteps": true
+        }
+      }
+    },
+    {
+      "id": "k3",
+      "name": "Ollama Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        200,
+        260
+      ],
+      "parameters": {
+        "model": "qwen2.5:7b",
+        "options": {
+          "temperature": 0,
+          "numCtx": 8192
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "k4",
+      "name": "siampart_mcp",
+      "type": "@n8n/n8n-nodes-langchain.mcpClientTool",
+      "typeVersion": 1.2,
+      "position": [
+        420,
+        260
+      ],
+      "parameters": {
+        "endpointUrl": "http://localhost:5678/mcp/siampart",
+        "serverTransport": "httpStreamable",
+        "authentication": "bearerAuth",
+        "include": "all",
+        "options": {}
+      },
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE",
+          "name": "MCP siampart token"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "รับข้อความแชต": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "siampart_mcp": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

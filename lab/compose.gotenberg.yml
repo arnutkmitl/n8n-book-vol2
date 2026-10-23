@@ -1,0 +1,7 @@
+# บทที่ 10 แปลง HTML เป็น PDF สำหรับใบเสนอราคา (Gotenberg มีฟอนต์ Noto Sans Thai ในตัว)
+# docker compose -f docker-compose.yml -f compose.gotenberg.yml up -d gotenberg
+# n8n เรียกที่ http://gotenberg:3000 ภายในเครือข่ายของ Docker ไม่ต้องเปิดพอร์ตออกนอกเครื่อง
+services:
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    restart: unless-stopped

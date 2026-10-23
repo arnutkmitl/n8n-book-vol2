@@ -1,0 +1,52 @@
+# บทที่ 12 queue mode: แยกงานรัน workflow ไปที่ worker ผ่าน Redis
+# ใช้คู่กับไฟล์หลัก: docker compose -f docker-compose.yml -f compose.queue.yml up -d
+# ทดสอบกับ n8n 2.43.7, redis:7-alpine
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  n8n:
+    environment:
+      EXECUTIONS_MODE: queue
+      QUEUE_BULL_REDIS_HOST: redis
+      # ให้ execution ที่กดรันจาก editor ไปทำที่ worker ด้วย
+      OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS: "true"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  n8n-worker:
+    image: n8nio/n8n:2.43.7
+    command: worker --concurrency=5
+    restart: unless-stopped
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      # ต้องเป็นคีย์เดียวกับ n8n หลัก มิฉะนั้น worker ถอดรหัส credential ไม่ได้
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      GENERIC_TIMEZONE: Asia/Bangkok
+      TZ: Asia/Bangkok
+      N8N_RESTRICT_FILE_ACCESS_TO: /files
+      EXECUTIONS_MODE: queue
+      QUEUE_BULL_REDIS_HOST: redis
+    volumes:
+      - ./files:/files
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+volumes:
+  redis_data:

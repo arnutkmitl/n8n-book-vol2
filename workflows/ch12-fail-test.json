@@ -1,0 +1,58 @@
+{
+  "name": "ch12 ทดลองให้ล้ม",
+  "nodes": [
+    {
+      "id": "f1",
+      "name": "รับคำขอทดสอบ",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "ch12-fail-test",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ch12-fail-test",
+        "options": {}
+      }
+    },
+    {
+      "id": "f2",
+      "name": "เรียกบริการที่ล่ม",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "parameters": {
+        "url": "http://service-that-does-not-exist:8080/api",
+        "options": {
+          "timeout": 3000
+        }
+      }
+    }
+  ],
+  "connections": {
+    "รับคำขอทดสอบ": {
+      "main": [
+        [
+          {
+            "node": "เรียกบริการที่ล่ม",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "ch12 แจ้งผู้ดูแลเมื่อ workflow ล้มเหลว"
+  },
+  "pinData": {}
+}

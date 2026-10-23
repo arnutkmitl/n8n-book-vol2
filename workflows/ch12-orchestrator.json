@@ -1,0 +1,425 @@
+{
+  "name": "ch12 ผู้ช่วยกลางเทศบาล",
+  "nodes": [
+    {
+      "id": "t1",
+      "name": "รับข้อความแชต",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "ch12-orchestrator",
+      "parameters": {
+        "options": {}
+      }
+    },
+    {
+      "id": "a1",
+      "name": "ผู้ช่วยกลาง",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "needsFallback": true,
+        "options": {
+          "systemMessage": "=# บทบาท\nคุณคือผู้ช่วยกลางของเทศบาลเมืองบ้านสวน มีหน้าที่รับข้อความจากประชาชนแล้วส่งต่อให้ผู้เชี่ยวชาญที่ตรงเรื่อง คุณไม่มีข้อมูลของเทศบาลเอง\n\n# บริบท\nวันนี้คือ {{ $now.setLocale('th').toFormat('cccc d MMMM') }} พ.ศ. {{ $now.year + 543 }}\n\n# ผู้เชี่ยวชาญ\n- agent_services ตอบคำถามข้อมูลบริการ ค่าธรรมเนียม ภาษี ใบอนุญาต เวลาทำการ เบอร์ติดต่อ\n- agent_complaints รับเรื่องร้องเรียนหรือแจ้งปัญหา และตอบสถานะเรื่องที่แจ้งไว้แล้ว\n\n# กติกา\n1. คำถามและเรื่องร้องเรียนทุกข้อ ต้องส่งให้ผู้เชี่ยวชาญที่ตรงเรื่อง ห้ามตอบจากความรู้ของตัวเอง\n2. ส่งข้อความของประชาชนให้ผู้เชี่ยวชาญครบทุกรายละเอียด ถ้าข้อความเป็นการตอบคำถามที่ถามไว้ก่อนหน้า เช่น บอกสถานที่ ให้รวมเรื่องเดิมจากประวัติแชตไปด้วย\n3. ถ้าข้อความมีทั้งคำถามและเรื่องร้องเรียน ให้ส่งให้ผู้เชี่ยวชาญทั้งสอง\n4. ตอบประชาชนด้วยเนื้อหาจากผู้เชี่ยวชาญ ห้ามเพิ่มตัวเลข เลขที่ หรือข้อมูลที่ผู้เชี่ยวชาญไม่ได้ให้\n5. เลขที่เรื่องร้องเรียนมาจาก agent_complaints เท่านั้น ถ้ายังไม่ได้เรียก agent_complaints ในข้อความนี้ ห้ามบอกเลขที่ใด ๆ\n6. ข้อความทักทายหรือขอบคุณ ตอบเองได้ในหนึ่งประโยค\n\n# รูปแบบคำตอบ\nภาษาสุภาพ ลงท้ายด้วย ค่ะ ไม่เกินหกบรรทัด ไม่ใช้ Markdown",
+          "maxIterations": 6,
+          "returnIntermediateSteps": true
+        }
+      }
+    },
+    {
+      "id": "m1",
+      "name": "โมเดลหลัก",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        80,
+        260
+      ],
+      "parameters": {
+        "model": "qwen2.5:7b",
+        "options": {
+          "temperature": 0,
+          "numCtx": 8192,
+          "numPredict": 768
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "m2",
+      "name": "โมเดลสำรอง",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        220,
+        260
+      ],
+      "parameters": {
+        "model": "qwen2.5:3b",
+        "options": {
+          "temperature": 0,
+          "numCtx": 8192,
+          "numPredict": 768
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "mem",
+      "name": "Postgres Chat Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        360,
+        260
+      ],
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('รับข้อความแชต').first().json.sessionId }}",
+        "tableName": "ch12_chat_histories",
+        "contextWindowLength": 6
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "s1",
+      "name": "agent_services",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        560,
+        260
+      ],
+      "parameters": {
+        "description": "ผู้เชี่ยวชาญข้อมูลบริการของเทศบาล ตอบเรื่องค่าธรรมเนียมขยะ ภาษีที่ดิน ใบอนุญาตก่อสร้าง การขายของในที่สาธารณะ เวลาทำการ เบอร์ติดต่อ และบริการอื่นจากเอกสารของเทศบาล ส่งคำถามของประชาชนเป็นภาษาไทยทั้งข้อความ",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "ch12 ผู้เชี่ยวชาญข้อมูลบริการ (Q&A)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "question": "={{ $fromAI('question', 'คำถามของประชาชนเป็นภาษาไทยทั้งข้อความ', 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "question",
+              "displayName": "question",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      }
+    },
+    {
+      "id": "c1",
+      "name": "agent_complaints",
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 3,
+      "position": [
+        960,
+        260
+      ],
+      "parameters": {
+        "toolDescription": "ใช้ทุกครั้งที่ประชาชนแจ้งปัญหา ร้องเรียน หรือถามความคืบหน้าของเรื่องที่แจ้งไว้ เครื่องมือนี้เป็นทางเดียวที่บันทึกเรื่องร้องเรียน ออกเลขที่เรื่อง และดูสถานะจริงได้ ส่งข้อความของประชาชนพร้อมสถานที่ทั้งหมดที่บอกไว้",
+        "text": "={{ $fromAI('request', 'ข้อความร้องเรียนหรือคำถามสถานะของประชาชน พร้อมสถานที่ที่บอกไว้', 'string') }}",
+        "options": {
+          "systemMessage": "# บทบาท\nคุณคือเจ้าหน้าที่รับเรื่องร้องเรียนของเทศบาลเมืองบ้านสวน\n\n# กติกา\n1. เรื่องร้องเรียนต้องมีสองอย่าง คือปัญหาที่พบ และสถานที่ที่ระบุได้ เช่น ชื่อซอย ถนน หรือสถานที่ใกล้เคียง\n2. ถ้ายังไม่มีสถานที่ ห้ามบันทึก ให้ตอบว่าต้องขอทราบสถานที่ก่อน\n3. เมื่อครบแล้ว เรียก create_complaint หนึ่งครั้ง แล้วตอบเลขที่ที่ได้จากเครื่องมือ พร้อมแจ้งว่าเทศบาลแจ้งผลภายใน 15 วันทำการ\n4. ถ้าถามสถานะและมีเลขที่ BS- ให้เรียก check_ticket แล้วตอบสถานะตามผลที่ได้\n5. ห้ามแต่งเลขที่เรื่องเอง",
+          "maxIterations": 3
+        }
+      }
+    },
+    {
+      "id": "c2",
+      "name": "โมเดลผู้เชี่ยวชาญร้องเรียน",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        860,
+        500
+      ],
+      "parameters": {
+        "model": "qwen2.5:7b",
+        "options": {
+          "temperature": 0,
+          "numCtx": 8192,
+          "numPredict": 768
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "c3c",
+      "name": "create_complaint",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1000,
+        500
+      ],
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "บันทึกเรื่องร้องเรียนใหม่ เรียกเมื่อรู้ทั้งปัญหาและสถานที่แล้วเท่านั้น คืนเลขที่เรื่อง (ticket_no)",
+        "operation": "executeQuery",
+        "query": "-- บันทึกเรื่องร้องเรียนจากผู้ช่วยกลาง ใช้ตารางเดียวกับบทที่ 8 และ 9\n-- เก็บ sessionId ของแชตในคอลัมน์ line_user_id เพื่อหาเรื่องทั้งหมดของผู้ใช้คนเดียวกันได้\nINSERT INTO citizen_requests (channel, kind, message, location, line_user_id)\nVALUES ('chat', 'complaint', $1, $2, $3)\nRETURNING ticket_no, status;",
+        "options": {
+          "queryReplacement": "={{ [$fromAI('problem', 'ปัญหาที่ประชาชนแจ้ง เขียนเป็นประโยคเดียว', 'string'), $fromAI('location', 'สถานที่เกิดเหตุตามที่ประชาชนบอก', 'string'), $('รับข้อความแชต').first().json.sessionId] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "c3k",
+      "name": "check_ticket",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1200,
+        500
+      ],
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "ดูสถานะเรื่องร้องเรียนจากเลขที่ BS- คืนสถานะ หน่วยงานที่รับผิดชอบ และวันครบกำหนด",
+        "operation": "executeQuery",
+        "query": "SELECT ticket_no, status, department, to_char(due_date, 'DD/MM/YYYY') AS due_date\nFROM citizen_requests WHERE ticket_no = upper(trim($1));",
+        "options": {
+          "queryReplacement": "={{ [$fromAI('ticket_no', 'เลขที่เรื่อง ขึ้นต้นด้วย BS- เช่น BS-000123', 'string')] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "g1",
+      "name": "เลขที่ในคำตอบ",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// ด่านตรวจเลขที่เรื่อง: เลข BS- ทุกตัวในคำตอบต้องมีอยู่จริงในตาราง citizen_requests\nconst output = String($json.output ?? '');\nconst tickets = [...new Set(output.match(/BS-\\d+/g) ?? [])];\nreturn { json: { output, tickets: JSON.stringify(tickets) } };"
+      }
+    },
+    {
+      "id": "g2",
+      "name": "ตรวจเลขที่กับตาราง",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- คืนเลขที่ที่คำตอบอ้างถึงแต่ไม่มีอยู่ในตาราง\nSELECT coalesce(json_agg(t), '[]'::json) AS missing\nFROM jsonb_array_elements_text($1::jsonb) AS t\nWHERE NOT EXISTS (SELECT 1 FROM citizen_requests WHERE ticket_no = t);",
+        "options": {
+          "queryReplacement": "={{ [$json.tickets] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "g3",
+      "name": "คำตอบที่ส่ง",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// ด่านสุดท้ายก่อนถึงประชาชน: คำตอบว่าง หรืออ้างเลขที่ที่ไม่มีอยู่จริง ไม่ส่งออกไป\nconst output = $('เลขที่ในคำตอบ').first().json.output;\nconst missing = $json.missing ?? [];\nif (!output.trim()) {\n  // พบเมื่อโมเดลสำรองตอบกลับเป็นข้อความว่าง\n  return { json: { output: 'ขออภัยค่ะ ตอนนี้ระบบตอบคำถามนี้ไม่ได้ กรุณาโทร 0 4400 1234 ในเวลาราชการค่ะ', blocked: 'empty' } };\n}\nif (missing.length > 0) {\n  return { json: { output: 'ขออภัยค่ะ ระบบยังบันทึกเรื่องนี้ไม่สำเร็จ กรุณาแจ้งอีกครั้งพร้อมสถานที่ หรือโทรสายด่วน 0 4400 1299 ได้ตลอด 24 ชั่วโมงค่ะ', blocked: missing } };\n}\nreturn { json: { output } };"
+      }
+    }
+  ],
+  "connections": {
+    "รับข้อความแชต": {
+      "main": [
+        [
+          {
+            "node": "ผู้ช่วยกลาง",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "โมเดลหลัก": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "ผู้ช่วยกลาง",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "โมเดลสำรอง": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "ผู้ช่วยกลาง",
+            "type": "ai_languageModel",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "ผู้ช่วยกลาง",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "agent_services": {
+      "ai_tool": [
+        [
+          {
+            "node": "ผู้ช่วยกลาง",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "agent_complaints": {
+      "ai_tool": [
+        [
+          {
+            "node": "ผู้ช่วยกลาง",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "โมเดลผู้เชี่ยวชาญร้องเรียน": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "agent_complaints",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create_complaint": {
+      "ai_tool": [
+        [
+          {
+            "node": "agent_complaints",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_ticket": {
+      "ai_tool": [
+        [
+          {
+            "node": "agent_complaints",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ผู้ช่วยกลาง": {
+      "main": [
+        [
+          {
+            "node": "เลขที่ในคำตอบ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "เลขที่ในคำตอบ": {
+      "main": [
+        [
+          {
+            "node": "ตรวจเลขที่กับตาราง",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ตรวจเลขที่กับตาราง": {
+      "main": [
+        [
+          {
+            "node": "คำตอบที่ส่ง",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -1,0 +1,258 @@
+{
+  "name": "ch12 Agent เดียว (ตัวเปรียบเทียบ)",
+  "nodes": [
+    {
+      "id": "t1",
+      "name": "รับข้อความแชต",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "ch12-single-agent",
+      "parameters": {
+        "options": {}
+      }
+    },
+    {
+      "id": "a1",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "options": {
+          "systemMessage": "=# บทบาท\nคุณคือเจ้าหน้าที่ตอบแชตของเทศบาลเมืองบ้านสวน\n\n# บริบท\nวันนี้คือ {{ $now.setLocale('th').toFormat('cccc d MMMM') }} พ.ศ. {{ $now.year + 543 }}\n\n# กติกา\n1. คำถามข้อมูลบริการ ค่าธรรมเนียม ภาษี ใบอนุญาต เวลาทำการ ต้องค้นด้วย search_documents ก่อนตอบ และตอบจากข้อความที่ค้นได้เท่านั้น ห้ามเดาตัวเลข\n2. ถ้าค้นแล้วไม่พบเรื่องที่ถาม ให้ตอบว่า \"ยังไม่มีข้อมูลเรื่องนี้ในเอกสารของเทศบาล ติดต่อ 0 4400 1234\"\n3. เรื่องร้องเรียนต้องมีทั้งปัญหาและสถานที่ ถ้ายังไม่มีสถานที่ให้ถามก่อน ห้ามบันทึก\n4. เมื่อครบแล้ว เรียก create_complaint หนึ่งครั้ง แล้วแจ้งเลขที่ที่ได้จากเครื่องมือ และแจ้งว่าเทศบาลแจ้งผลภายใน 15 วันทำการ\n5. ถ้าถามสถานะและมีเลขที่ BS- ให้เรียก check_ticket\n6. ห้ามแต่งเลขที่เรื่องเอง\n\n# รูปแบบคำตอบ\nภาษาสุภาพ ลงท้ายด้วย ค่ะ ไม่เกินหกบรรทัด ไม่ใช้ Markdown",
+          "maxIterations": 5,
+          "returnIntermediateSteps": true
+        }
+      }
+    },
+    {
+      "id": "m1",
+      "name": "Ollama Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ],
+      "parameters": {
+        "model": "qwen2.5:7b",
+        "options": {
+          "temperature": 0,
+          "numCtx": 8192,
+          "numPredict": 768
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "mem",
+      "name": "Postgres Chat Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        260,
+        260
+      ],
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('รับข้อความแชต').first().json.sessionId }}",
+        "tableName": "ch12_single_histories",
+        "contextWindowLength": 6
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "s3",
+      "name": "search_documents",
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePGVector",
+      "typeVersion": 1.3,
+      "position": [
+        420,
+        260
+      ],
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "ค้นเอกสารประกาศ ระเบียบ และคู่มือประชาชนของเทศบาลเมืองบ้านสวน คืนข้อความจากเอกสารพร้อมชื่อเอกสาร",
+        "tableName": "kb_bansuan",
+        "topK": 4,
+        "includeDocumentMetadata": true,
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "s4",
+      "name": "Embeddings Ollama",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOllama",
+      "typeVersion": 1,
+      "position": [
+        420,
+        460
+      ],
+      "parameters": {
+        "model": "bge-m3:latest"
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "c3c",
+      "name": "create_complaint",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        760,
+        260
+      ],
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "บันทึกเรื่องร้องเรียนใหม่ เรียกเมื่อรู้ทั้งปัญหาและสถานที่แล้วเท่านั้น คืนเลขที่เรื่อง (ticket_no)",
+        "operation": "executeQuery",
+        "query": "-- บันทึกเรื่องร้องเรียนจากผู้ช่วยกลาง ใช้ตารางเดียวกับบทที่ 8 และ 9\n-- เก็บ sessionId ของแชตในคอลัมน์ line_user_id เพื่อหาเรื่องทั้งหมดของผู้ใช้คนเดียวกันได้\nINSERT INTO citizen_requests (channel, kind, message, location, line_user_id)\nVALUES ('chat', 'complaint', $1, $2, $3)\nRETURNING ticket_no, status;",
+        "options": {
+          "queryReplacement": "={{ [$fromAI('problem', 'ปัญหาที่ประชาชนแจ้ง เขียนเป็นประโยคเดียว', 'string'), $fromAI('location', 'สถานที่เกิดเหตุตามที่ประชาชนบอก', 'string'), $('รับข้อความแชต').first().json.sessionId] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "c3k",
+      "name": "check_ticket",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        960,
+        260
+      ],
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "ดูสถานะเรื่องร้องเรียนจากเลขที่ BS- คืนสถานะ หน่วยงานที่รับผิดชอบ และวันครบกำหนด",
+        "operation": "executeQuery",
+        "query": "SELECT ticket_no, status, department, to_char(due_date, 'DD/MM/YYYY') AS due_date\nFROM citizen_requests WHERE ticket_no = upper(trim($1));",
+        "options": {
+          "queryReplacement": "={{ [$fromAI('ticket_no', 'เลขที่เรื่อง ขึ้นต้นด้วย BS- เช่น BS-000123', 'string')] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "รับข้อความแชต": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "search_documents": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Ollama": {
+      "ai_embedding": [
+        [
+          {
+            "node": "search_documents",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create_complaint": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_ticket": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -1,0 +1,9 @@
+# เพิ่มเซิร์ฟเวอร์อีเมลจำลองสำหรับบทที่ 7 (ทดสอบ human review ทางอีเมลโดยไม่ส่งออกจริง)
+# ใช้ร่วมกับไฟล์หลัก: docker compose -f docker-compose.yml -f compose.mailpit.yml up -d
+services:
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025"   # หน้าเว็บอ่านอีเมล http://localhost:8025
+    # n8n ส่งอีเมลเข้า mailpit ที่ host mailpit พอร์ต 1025 ผ่านเครือข่ายภายในของ Docker

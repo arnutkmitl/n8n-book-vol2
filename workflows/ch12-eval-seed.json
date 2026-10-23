@@ -1,0 +1,167 @@
+{
+  "name": "ch12 สร้างชุดทดสอบ",
+  "nodes": [
+    {
+      "id": "d1",
+      "name": "เริ่ม",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "d2",
+      "name": "สร้างตารางชุดทดสอบ",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "bansuan_eval",
+        "columns": {
+          "column": [
+            {
+              "name": "question",
+              "type": "string"
+            },
+            {
+              "name": "expected",
+              "type": "string"
+            },
+            {
+              "name": "should_abstain",
+              "type": "boolean"
+            },
+            {
+              "name": "answer",
+              "type": "string"
+            },
+            {
+              "name": "correct",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      }
+    },
+    {
+      "id": "d5",
+      "name": "ล้างแถวเดิม",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "resource": "table",
+        "operation": "clear",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "bansuan_eval"
+        }
+      }
+    },
+    {
+      "id": "d3",
+      "name": "ข้อมูลชุดทดสอบ",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// ชุดทดสอบ 15 ข้อ คัดลอกมาจาก data/ch12-eval-set.json\nreturn [\n  {\n    \"question\": \"ค่าขยะบ้านเดือนละเท่าไหร่คะ ทิ้งวันละไม่ถึง 20 ลิตร\",\n    \"expected\": \"20 บาท\",\n    \"should_abstain\": false\n  },\n  {\n    \"question\": \"ร้านอาหารเล็ก ๆ เสียค่าขยะเดือนละเท่าไร\",\n    \"expected\": \"150\",\n    \"should_abstain\": false\n  },\n  {\n    \"question\": \"ภาษีที่ดินต้องจ่ายภายในวันไหน\",\n    \"expected\": \"30 เมษายน\",\n    \"should_abstain\": false\n  },\n  {\n    \"question\": \"ภาษีที่ดินปีนี้ 4,000 บาท ผ่อนจ่ายได้ไหม\",\n    \"expected\": \"3 งวด\",\n    \"should_abstain\": false\n  },\n  {\n    \"question\": \"จ่ายภาษีที่ดินช้าไป 2 เดือน เสียเงินเพิ่มเท่าไร\",\n    \"expected\": \"ร้อยละ 1/1%\",\n    \"should_abstain\": false\n  },\n  {\n    \"question\": \"อยากขายน้ำปั่นหน้าโรงพยาบาล ค่าใบอนุญาตปีละเท่าไร\",\n    \"expected\": \"300\",\n    \"should_abstain\": false\n  },\n  {\n    \"question\": \"วันเสาร์สำนักงานเทศบาลเปิดไหม\",\n    \"expected\": \"เสาร์แรก\",\n    \"should_abstain\": false\n  },\n  {\n    \"question\": \"เรียกรถดูดส้วมเที่ยวละเท่าไร\",\n    \"expected\": \"300\",\n    \"should_abstain\": false\n  },\n  {\n    \"question\": \"แม่อายุ 80 ต้องไปหาหมอ ขอรถเทศบาลรับส่งได้ไหม\",\n    \"expected\": \"ฟรี|410\",\n    \"should_abstain\": false\n  },\n  {\n    \"question\": \"ขอสำเนาข้อมูลข่าวสารราชการ เสียค่าถ่ายเอกสารหน้าละเท่าไร\",\n    \"expected\": \"1 บาท\",\n    \"should_abstain\": false\n  },\n  {\n    \"question\": \"หลอดไฟเสียกับถ่านไฟฉายเก่าทิ้งที่ไหน\",\n    \"expected\": \"เสาร์แรก\",\n    \"should_abstain\": false\n  },\n  {\n    \"question\": \"ไม่เห็นด้วยกับภาษีที่ประเมินมา คัดค้านได้ภายในกี่วัน\",\n    \"expected\": \"30 วัน\",\n    \"should_abstain\": false\n  },\n  {\n    \"question\": \"ขอทำบัตรประชาชนที่เทศบาลได้ไหม\",\n    \"expected\": \"\",\n    \"should_abstain\": true\n  },\n  {\n    \"question\": \"ค่าน้ำประปาหน่วยละเท่าไร\",\n    \"expected\": \"\",\n    \"should_abstain\": true\n  },\n  {\n    \"question\": \"เทศบาลมีที่จอดรถให้เช่ารายเดือนไหม\",\n    \"expected\": \"\",\n    \"should_abstain\": true\n  }\n].map(r => ({ json: r }));"
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "d4",
+      "name": "เติมแถว",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "bansuan_eval"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "เริ่ม": {
+      "main": [
+        [
+          {
+            "node": "สร้างตารางชุดทดสอบ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "สร้างตารางชุดทดสอบ": {
+      "main": [
+        [
+          {
+            "node": "ล้างแถวเดิม",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ล้างแถวเดิม": {
+      "main": [
+        [
+          {
+            "node": "ข้อมูลชุดทดสอบ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ข้อมูลชุดทดสอบ": {
+      "main": [
+        [
+          {
+            "node": "เติมแถว",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

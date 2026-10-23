@@ -1,0 +1,442 @@
+{
+  "name": "ch11 ตรวจใบแจ้งหนี้",
+  "nodes": [
+    {
+      "id": "i2",
+      "name": "เมื่อมีใบแจ้งหนี้ใหม่",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "i3",
+      "name": "ข้อความจาก PDF",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        400,
+        0
+      ],
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "data",
+        "options": {
+          "keepSource": "json"
+        }
+      }
+    },
+    {
+      "id": "i3b",
+      "name": "เก็บชื่อไฟล์",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        560,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f",
+              "name": "file_name",
+              "type": "string",
+              "value": "={{ $('เมื่อมีใบแจ้งหนี้ใหม่').item.json.file_name }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "i4",
+      "name": "ดึงข้อมูลใบแจ้งหนี้",
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1.2,
+      "position": [
+        760,
+        0
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "text": "={{ $json.text }}",
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"invoice_no\": {\n      \"type\": \"string\",\n      \"description\": \"เลขที่ใบแจ้งหนี้ตามที่พิมพ์\"\n    },\n    \"invoice_date\": {\n      \"type\": \"string\",\n      \"description\": \"วันที่ตามที่พิมพ์ เช่น 15/10/2569\"\n    },\n    \"vendor_name\": {\n      \"type\": \"string\",\n      \"description\": \"ชื่อผู้ขาย (ผู้ออกใบแจ้งหนี้) ไม่ใช่ชื่อลูกค้า\"\n    },\n    \"vendor_tax_id\": {\n      \"type\": \"string\",\n      \"description\": \"เลขประจำตัวผู้เสียภาษี 13 หลักของผู้ขาย ไม่ใช่ของลูกค้า\"\n    },\n    \"lines\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"description\": {\n            \"type\": \"string\"\n          },\n          \"qty\": {\n            \"type\": \"number\"\n          },\n          \"unit_price\": {\n            \"type\": \"number\"\n          },\n          \"amount\": {\n            \"type\": \"number\"\n          }\n        },\n        \"required\": [\n          \"description\",\n          \"qty\",\n          \"unit_price\",\n          \"amount\"\n        ]\n      }\n    },\n    \"subtotal\": {\n      \"type\": \"number\",\n      \"description\": \"ยอดรวมก่อนภาษีมูลค่าเพิ่มตามที่พิมพ์\"\n    },\n    \"vat\": {\n      \"type\": \"number\",\n      \"description\": \"ภาษีมูลค่าเพิ่มตามที่พิมพ์\"\n    },\n    \"total\": {\n      \"type\": \"number\",\n      \"description\": \"จำนวนเงินรวมทั้งสิ้นตามที่พิมพ์\"\n    }\n  },\n  \"required\": [\n    \"invoice_no\",\n    \"invoice_date\",\n    \"vendor_name\",\n    \"vendor_tax_id\",\n    \"lines\",\n    \"subtotal\",\n    \"vat\",\n    \"total\"\n  ]\n}",
+        "options": {
+          "systemPromptTemplate": "คุณดึงข้อมูลจากใบแจ้งหนี้ภาษาไทย ข้อความมาจากการแปลง PDF จึงอาจมีสระหรือวรรณยุกต์หายบางตัว\nคัดลอกตัวเลขทุกตัวตามที่พิมพ์ในเอกสาร ห้ามคำนวณใหม่ และห้ามแก้ตัวเลขให้ถูก แม้จะเห็นว่าผลรวมไม่ตรง ระบบจะตรวจตัวเลขเอง\nใบแจ้งหนี้มีเลขผู้เสียภาษีสองชุด ชุดของผู้ขายอยู่ใต้ชื่อผู้ขายด้านบน ชุดของลูกค้าอยู่หลังคำว่า ลูกค้า ให้ใช้ชุดของผู้ขาย"
+        }
+      }
+    },
+    {
+      "id": "i5",
+      "name": "Ollama qwen2.5:7b",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        760,
+        220
+      ],
+      "parameters": {
+        "model": "qwen2.5:7b",
+        "options": {
+          "temperature": 0,
+          "numCtx": 8192,
+          "numPredict": 1024
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "i6",
+      "name": "ตรวจทะเบียนผู้ขายและเลขซ้ำ",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        980,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT (SELECT name FROM vendors WHERE tax_id = $1) AS vendor_name,\n       i.status AS duplicate_status, i.id IS NOT NULL AS duplicate\nFROM (SELECT 1) one\nLEFT JOIN invoices i ON i.vendor_tax_id = $1 AND i.invoice_no = $2;",
+        "options": {
+          "queryReplacement": "={{ [String($json.output.vendor_tax_id || '').replace(/\\D/g, ''), $json.output.invoice_no] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "i7",
+      "name": "ตรวจใบแจ้งหนี้",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// ตรวจใบแจ้งหนี้ด้วยกฎที่แน่นอน ไม่ใช้โมเดล ทุกข้อที่ไม่ผ่านถูกเก็บเป็นเหตุผล\nconst x = $('ดึงข้อมูลใบแจ้งหนี้').item.json.output;\nconst text = $('เก็บชื่อไฟล์').item.json.text;\nconst db = $json;\nconst r2 = n => Math.round(Number(n) * 100) / 100;\nconst fmt = n => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });\nconst problems = [];\n\n// 1. เลขผู้เสียภาษี 13 หลักและหลักตรวจสอบ\nconst id = String(x.vendor_tax_id || '').replace(/\\D/g, '');\nconst checkDigit = id.length === 13\n  ? (11 - [...id.slice(0, 12)].reduce((s, d, i) => s + Number(d) * (13 - i), 0) % 11) % 10 : -1;\nif (id.length !== 13 || checkDigit !== Number(id[12])) problems.push(`เลขผู้เสียภาษี ${x.vendor_tax_id} ไม่ถูกต้อง`);\n// 2. ผู้ขายต้องอยู่ในทะเบียน และเลขที่ใบแจ้งหนี้ต้องไม่ซ้ำ\nif (!db.vendor_name) problems.push(`ผู้ขายเลขผู้เสียภาษี ${id} ไม่อยู่ในทะเบียนผู้ขาย`);\nif (db.duplicate) problems.push(`เลขที่ ${x.invoice_no} ของผู้ขายรายนี้เคยรับแล้ว (สถานะ ${db.duplicate_status})`);\n// 3. ตัวเลขต้องสอดคล้องกัน\nconst lines = x.lines ?? [];\nfor (const l of lines) {\n  if (Math.abs(r2(l.qty * l.unit_price) - r2(l.amount)) > 0.01) problems.push(`รายการ ${l.description}: ${l.qty} x ${fmt(l.unit_price)} ไม่เท่ากับ ${fmt(l.amount)}`);\n}\nconst sum = r2(lines.reduce((s, l) => s + Number(l.amount), 0));\nif (Math.abs(sum - r2(x.subtotal)) > 0.01) problems.push(`ผลรวมรายการ ${fmt(sum)} ไม่เท่ากับยอดรวม ${fmt(x.subtotal)}`);\nif (Math.abs(r2(x.subtotal * 0.07) - r2(x.vat)) > 0.01) problems.push(`VAT ${fmt(x.vat)} ไม่เท่ากับ 7% ของ ${fmt(x.subtotal)} ซึ่งเท่ากับ ${fmt(r2(x.subtotal * 0.07))}`);\nif (Math.abs(r2(Number(x.subtotal) + Number(x.vat)) - r2(x.total)) > 0.01) problems.push(`ยอดรวมทั้งสิ้น ${fmt(x.total)} ไม่เท่ากับยอดรวมบวก VAT`);\n// 4. ตัวเลขที่โมเดลดึงมาต้องมีอยู่จริงในเอกสาร กันโมเดลแต่งหรือแก้ตัวเลขเอง\nfor (const [name, v] of [['ยอดรวม', x.subtotal], ['VAT', x.vat], ['ยอดรวมทั้งสิ้น', x.total]]) {\n  if (!text.includes(fmt(v))) problems.push(`ไม่พบ${name} ${fmt(v)} ในข้อความของเอกสาร`);\n}\nif (!text.includes(String(x.invoice_no))) problems.push(`ไม่พบเลขที่ ${x.invoice_no} ในข้อความของเอกสาร`);\nif (id && !text.replace(/\\s/g, '').includes(id)) problems.push(`ไม่พบเลขผู้เสียภาษี ${id} ในข้อความของเอกสาร`);\n\nreturn { json: { ...x, vendor_tax_id: id, registered_name: db.vendor_name, lines_sum: sum, problems, pass: problems.length === 0,\n                 file_name: $('เก็บชื่อไฟล์').item.json.file_name } };"
+      }
+    },
+    {
+      "id": "i8",
+      "name": "บันทึกใบแจ้งหนี้",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1380,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO invoices (vendor_tax_id, invoice_no, invoice_date, subtotal, vat, total, extracted, problems, status, source_file)\nVALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)\nON CONFLICT (vendor_tax_id, invoice_no) DO NOTHING\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$json.vendor_tax_id, $json.invoice_no, $json.invoice_date, $json.subtotal, $json.vat, $json.total, JSON.stringify($json), $json.problems.join('; '), $json.pass ? 'pending_approval' : 'failed_check', $json.file_name] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "i9",
+      "name": "ผ่านการตรวจหรือไม่",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1580,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "p",
+              "leftValue": "={{ $('ตรวจใบแจ้งหนี้').item.json.pass }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "i10",
+      "name": "ขออนุมัติจ่าย",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1800,
+        -100
+      ],
+      "parameters": {
+        "resource": "email",
+        "operation": "sendAndWait",
+        "fromEmail": "ap-bot@siampart.test",
+        "toEmail": "finance-manager@siampart.test",
+        "subject": "=ขออนุมัติจ่าย {{ $('ตรวจใบแจ้งหนี้').item.json.registered_name }} {{ $('ตรวจใบแจ้งหนี้').item.json.total }} บาท",
+        "message": "=ใบแจ้งหนี้ {{ $('ตรวจใบแจ้งหนี้').item.json.invoice_no }} วันที่ {{ $('ตรวจใบแจ้งหนี้').item.json.invoice_date }}\nผู้ขาย {{ $('ตรวจใบแจ้งหนี้').item.json.registered_name }} ({{ $('ตรวจใบแจ้งหนี้').item.json.vendor_tax_id }})\n\n{{ $('ตรวจใบแจ้งหนี้').item.json.lines.map(l => l.description + ' ' + l.qty + ' x ' + l.unit_price + ' = ' + l.amount).join('\\n') }}\n\nยอดก่อน VAT {{ $('ตรวจใบแจ้งหนี้').item.json.subtotal }} บาท VAT {{ $('ตรวจใบแจ้งหนี้').item.json.vat }} บาท รวม {{ $('ตรวจใบแจ้งหนี้').item.json.total }} บาท\nผ่านการตรวจอัตโนมัติ: ผู้ขายอยู่ในทะเบียน เลขที่ไม่ซ้ำ ผลรวมและ VAT ถูกต้อง ตัวเลขตรงกับข้อความในไฟล์\nไฟล์ต้นฉบับ: {{ $('ตรวจใบแจ้งหนี้').item.json.file_name }} ตรวจกับใบสั่งซื้อและใบรับสินค้าก่อนอนุมัติ",
+        "responseType": "approval",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "approveLabel": "อนุมัติจ่าย",
+            "disapproveLabel": "ไม่อนุมัติ"
+          }
+        },
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE",
+          "name": "Mailpit lab"
+        }
+      }
+    },
+    {
+      "id": "i11",
+      "name": "บันทึกผลอนุมัติ",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2000,
+        -100
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE invoices SET status = CASE WHEN $2 THEN 'approved' ELSE 'rejected' END WHERE id = $1 RETURNING invoice_no, status;",
+        "options": {
+          "queryReplacement": "={{ [$('บันทึกใบแจ้งหนี้').item.json.id, $json.data.approved === true] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "i12",
+      "name": "แจ้งฝ่ายบัญชีให้ตรวจ",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1800,
+        120
+      ],
+      "parameters": {
+        "resource": "email",
+        "operation": "send",
+        "fromEmail": "ap-bot@siampart.test",
+        "toEmail": "ap@siampart.test",
+        "subject": "=ใบแจ้งหนี้ไม่ผ่านการตรวจ {{ $('ตรวจใบแจ้งหนี้').item.json.invoice_no }} ({{ $('ตรวจใบแจ้งหนี้').item.json.file_name }})",
+        "emailFormat": "text",
+        "text": "=ใบแจ้งหนี้จาก {{ $('เมื่อมีใบแจ้งหนี้ใหม่').item.json.from }} ไม่ผ่านการตรวจอัตโนมัติ ด้วยเหตุผลต่อไปนี้\n\n{{ $('ตรวจใบแจ้งหนี้').item.json.problems.map(p => '- ' + p).join('\\n') }}\n\nตรวจเอกสารต้นฉบับ แล้วติดต่อผู้ขายถ้าเอกสารผิดจริง",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE",
+          "name": "Mailpit lab"
+        }
+      }
+    },
+    {
+      "id": "i13",
+      "name": "แจ้งว่าอ่านไฟล์ไม่ได้",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        980,
+        220
+      ],
+      "parameters": {
+        "resource": "email",
+        "operation": "send",
+        "fromEmail": "ap-bot@siampart.test",
+        "toEmail": "ap@siampart.test",
+        "subject": "=อ่านใบแจ้งหนี้ไม่สำเร็จ {{ $('เก็บชื่อไฟล์').item.json.file_name }}",
+        "emailFormat": "text",
+        "text": "=ระบบดึงข้อมูลจากไฟล์นี้ไม่ได้ ให้บันทึกด้วยมือ\nจาก: {{ $('เมื่อมีใบแจ้งหนี้ใหม่').item.json.from }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE",
+          "name": "Mailpit lab"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "เมื่อมีใบแจ้งหนี้ใหม่": {
+      "main": [
+        [
+          {
+            "node": "ข้อความจาก PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ข้อความจาก PDF": {
+      "main": [
+        [
+          {
+            "node": "เก็บชื่อไฟล์",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "เก็บชื่อไฟล์": {
+      "main": [
+        [
+          {
+            "node": "ดึงข้อมูลใบแจ้งหนี้",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama qwen2.5:7b": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "ดึงข้อมูลใบแจ้งหนี้",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ดึงข้อมูลใบแจ้งหนี้": {
+      "main": [
+        [
+          {
+            "node": "ตรวจทะเบียนผู้ขายและเลขซ้ำ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "แจ้งว่าอ่านไฟล์ไม่ได้",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ตรวจทะเบียนผู้ขายและเลขซ้ำ": {
+      "main": [
+        [
+          {
+            "node": "ตรวจใบแจ้งหนี้",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ตรวจใบแจ้งหนี้": {
+      "main": [
+        [
+          {
+            "node": "บันทึกใบแจ้งหนี้",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "บันทึกใบแจ้งหนี้": {
+      "main": [
+        [
+          {
+            "node": "ผ่านการตรวจหรือไม่",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ผ่านการตรวจหรือไม่": {
+      "main": [
+        [
+          {
+            "node": "ขออนุมัติจ่าย",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "แจ้งฝ่ายบัญชีให้ตรวจ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ขออนุมัติจ่าย": {
+      "main": [
+        [
+          {
+            "node": "บันทึกผลอนุมัติ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

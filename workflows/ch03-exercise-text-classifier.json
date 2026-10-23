@@ -1,0 +1,333 @@
+{
+  "name": "ch03 แบบฝึกหัด จัดประเภทข้อความลูกค้า (Text Classifier)",
+  "nodes": [
+    {
+      "id": "t1",
+      "name": "รับข้อความลูกค้า",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "ch03-classify",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ch03-classify",
+        "responseMode": "lastNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "t2",
+      "name": "จัดประเภทข้อความ",
+      "type": "@n8n/n8n-nodes-langchain.textClassifier",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "inputText": "={{ $json.body.message }}",
+        "categories": {
+          "categories": [
+            {
+              "category": "สอบถามสินค้า",
+              "description": "ถามว่ามีสินค้าไหม รุ่นไหนใช้กับเครื่องอะไร สเปกหรือขนาด"
+            },
+            {
+              "category": "ขอราคา",
+              "description": "ถามราคา ขอใบเสนอราคา ถามส่วนลดหรือราคาส่ง"
+            },
+            {
+              "category": "ติดตามการจัดส่ง",
+              "description": "ถามว่าของส่งหรือยัง เลขพัสดุ ส่งกี่วัน ค่าส่ง"
+            },
+            {
+              "category": "แจ้งปัญหาสินค้า",
+              "description": "สินค้าชำรุด ผิดรุ่น ใช้ไม่ได้ ขอเปลี่ยนหรือคืน"
+            },
+            {
+              "category": "การชำระเงิน",
+              "description": "แจ้งโอนเงิน ขอใบกำกับภาษี ถามช่องทางชำระ เครดิต"
+            }
+          ]
+        },
+        "options": {
+          "fallback": "other"
+        }
+      }
+    },
+    {
+      "id": "t3",
+      "name": "Ollama Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        240,
+        220
+      ],
+      "parameters": {
+        "model": "qwen2.5:3b",
+        "options": {
+          "temperature": 0,
+          "numCtx": 8192
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "s0",
+      "name": "หมวด สอบถามสินค้า",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        520,
+        -450
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "x0",
+              "name": "category",
+              "value": "สอบถามสินค้า",
+              "type": "string"
+            },
+            {
+              "id": "y0",
+              "name": "message",
+              "value": "={{ $('รับข้อความลูกค้า').item.json.body.message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "s1",
+      "name": "หมวด ขอราคา",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        520,
+        -270
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "x1",
+              "name": "category",
+              "value": "ขอราคา",
+              "type": "string"
+            },
+            {
+              "id": "y1",
+              "name": "message",
+              "value": "={{ $('รับข้อความลูกค้า').item.json.body.message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "s2",
+      "name": "หมวด ติดตามการจัดส่ง",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        520,
+        -90
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "x2",
+              "name": "category",
+              "value": "ติดตามการจัดส่ง",
+              "type": "string"
+            },
+            {
+              "id": "y2",
+              "name": "message",
+              "value": "={{ $('รับข้อความลูกค้า').item.json.body.message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "s3",
+      "name": "หมวด แจ้งปัญหาสินค้า",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        520,
+        90
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "x3",
+              "name": "category",
+              "value": "แจ้งปัญหาสินค้า",
+              "type": "string"
+            },
+            {
+              "id": "y3",
+              "name": "message",
+              "value": "={{ $('รับข้อความลูกค้า').item.json.body.message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "s4",
+      "name": "หมวด การชำระเงิน",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        520,
+        270
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "x4",
+              "name": "category",
+              "value": "การชำระเงิน",
+              "type": "string"
+            },
+            {
+              "id": "y4",
+              "name": "message",
+              "value": "={{ $('รับข้อความลูกค้า').item.json.body.message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "s5",
+      "name": "หมวด อื่น ๆ",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        520,
+        450
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "x5",
+              "name": "category",
+              "value": "อื่น ๆ",
+              "type": "string"
+            },
+            {
+              "id": "y5",
+              "name": "message",
+              "value": "={{ $('รับข้อความลูกค้า').item.json.body.message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "รับข้อความลูกค้า": {
+      "main": [
+        [
+          {
+            "node": "จัดประเภทข้อความ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "จัดประเภทข้อความ",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "จัดประเภทข้อความ": {
+      "main": [
+        [
+          {
+            "node": "หมวด สอบถามสินค้า",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "หมวด ขอราคา",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "หมวด ติดตามการจัดส่ง",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "หมวด แจ้งปัญหาสินค้า",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "หมวด การชำระเงิน",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "หมวด อื่น ๆ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

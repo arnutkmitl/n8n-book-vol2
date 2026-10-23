@@ -1,0 +1,422 @@
+{
+  "name": "ch12 ผู้ช่วยกลางเทศบาล (ฉบับแรก)",
+  "nodes": [
+    {
+      "id": "t1",
+      "name": "รับข้อความแชต",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "ch12-orchestrator-v1",
+      "parameters": {
+        "options": {}
+      }
+    },
+    {
+      "id": "a1",
+      "name": "ผู้ช่วยกลาง",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "needsFallback": true,
+        "options": {
+          "systemMessage": "=# บทบาท\nคุณคือผู้ช่วยกลางของเทศบาลเมืองบ้านสวน มีหน้าที่รับข้อความจากประชาชนแล้วส่งต่อให้ผู้เชี่ยวชาญที่ตรงเรื่อง คุณไม่มีข้อมูลของเทศบาลเอง\n\n# บริบท\nวันนี้คือ {{ $now.setLocale('th').toFormat('cccc d MMMM') }} พ.ศ. {{ $now.year + 543 }}\n\n# ผู้เชี่ยวชาญ\n- agent_services ตอบคำถามข้อมูลบริการ ค่าธรรมเนียม ภาษี ใบอนุญาต เวลาทำการ เบอร์ติดต่อ\n- agent_complaints รับเรื่องร้องเรียนหรือแจ้งปัญหา และตอบสถานะเรื่องที่มีเลขที่ขึ้นต้นด้วย BS-\n\n# กติกา\n1. คำถามและเรื่องร้องเรียนทุกข้อ ต้องส่งให้ผู้เชี่ยวชาญที่ตรงเรื่อง ห้ามตอบจากความรู้ของตัวเอง\n2. ส่งข้อความของประชาชนให้ผู้เชี่ยวชาญครบทุกรายละเอียด ถ้าข้อความเป็นการตอบคำถามที่ถามไว้ก่อนหน้า เช่น บอกสถานที่ ให้รวมเรื่องเดิมจากประวัติแชตไปด้วย\n3. ถ้าข้อความมีทั้งคำถามและเรื่องร้องเรียน ให้ส่งให้ผู้เชี่ยวชาญทั้งสอง\n4. ตอบประชาชนด้วยเนื้อหาจากผู้เชี่ยวชาญ ห้ามเพิ่มตัวเลข เลขที่ หรือข้อมูลที่ผู้เชี่ยวชาญไม่ได้ให้\n5. ข้อความทักทายหรือขอบคุณ ตอบเองได้ในหนึ่งประโยค\n\n# รูปแบบคำตอบ\nภาษาสุภาพ ลงท้ายด้วย ค่ะ ไม่เกินหกบรรทัด ไม่ใช้ Markdown",
+          "maxIterations": 6,
+          "returnIntermediateSteps": true
+        }
+      }
+    },
+    {
+      "id": "m1",
+      "name": "โมเดลหลัก",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        80,
+        260
+      ],
+      "parameters": {
+        "model": "qwen2.5:7b",
+        "options": {
+          "temperature": 0,
+          "numCtx": 8192,
+          "numPredict": 768
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "m2",
+      "name": "โมเดลสำรอง",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        220,
+        260
+      ],
+      "parameters": {
+        "model": "qwen2.5:3b",
+        "options": {
+          "temperature": 0,
+          "numCtx": 8192,
+          "numPredict": 768
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "mem",
+      "name": "Postgres Chat Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        360,
+        260
+      ],
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('รับข้อความแชต').first().json.sessionId }}",
+        "tableName": "ch12_chat_histories",
+        "contextWindowLength": 6
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "s1",
+      "name": "agent_services",
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 3,
+      "position": [
+        560,
+        260
+      ],
+      "parameters": {
+        "toolDescription": "ผู้เชี่ยวชาญข้อมูลบริการของเทศบาล ตอบเรื่องค่าธรรมเนียมขยะ ภาษีที่ดิน ใบอนุญาตก่อสร้าง การขายของในที่สาธารณะ เวลาทำการ เบอร์ติดต่อ และบริการอื่นจากเอกสารของเทศบาล ส่งคำถามของประชาชนเป็นภาษาไทยทั้งข้อความ",
+        "text": "={{ $fromAI('question', 'คำถามของประชาชนเป็นภาษาไทยทั้งข้อความ', 'string') }}",
+        "options": {
+          "systemMessage": "# บทบาท\nคุณคือผู้เชี่ยวชาญข้อมูลบริการของเทศบาลเมืองบ้านสวน\n\n# กติกา\n1. ค้นด้วยเครื่องมือ search_documents ก่อนตอบทุกครั้ง\n2. ตอบจากข้อความที่ค้นได้เท่านั้น ห้ามเดาตัวเลข\n3. ถ้าค้นแล้วไม่พบเรื่องที่ถาม ให้ตอบว่า \"ยังไม่มีข้อมูลเรื่องนี้ในเอกสารของเทศบาล ติดต่อ 0 4400 1234\"\n4. บรรทัดสุดท้ายเขียน ที่มา: ตามด้วยชื่อเอกสารที่ใช้ตอบ",
+          "maxIterations": 3
+        }
+      }
+    },
+    {
+      "id": "s2",
+      "name": "โมเดลผู้เชี่ยวชาญบริการ",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        460,
+        500
+      ],
+      "parameters": {
+        "model": "qwen2.5:7b",
+        "options": {
+          "temperature": 0,
+          "numCtx": 8192,
+          "numPredict": 768
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "s3",
+      "name": "search_documents",
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePGVector",
+      "typeVersion": 1.3,
+      "position": [
+        640,
+        500
+      ],
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "ค้นเอกสารประกาศ ระเบียบ และคู่มือประชาชนของเทศบาลเมืองบ้านสวน คืนข้อความจากเอกสารพร้อมชื่อเอกสาร",
+        "tableName": "kb_bansuan",
+        "topK": 4,
+        "includeDocumentMetadata": true,
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "s4",
+      "name": "Embeddings Ollama",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOllama",
+      "typeVersion": 1,
+      "position": [
+        640,
+        700
+      ],
+      "parameters": {
+        "model": "bge-m3:latest"
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "c1",
+      "name": "agent_complaints",
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 3,
+      "position": [
+        960,
+        260
+      ],
+      "parameters": {
+        "toolDescription": "เจ้าหน้าที่รับเรื่องร้องเรียน บันทึกปัญหาที่ประชาชนแจ้ง เช่น ไฟถนนดับ ขยะไม่เก็บ ถนนชำรุด เสียงดัง และตอบสถานะเรื่องจากเลขที่ BS- ส่งข้อความร้องเรียนพร้อมสถานที่ทั้งหมดที่ประชาชนบอก",
+        "text": "={{ $fromAI('request', 'ข้อความร้องเรียนหรือคำถามสถานะของประชาชน พร้อมสถานที่ที่บอกไว้', 'string') }}",
+        "options": {
+          "systemMessage": "# บทบาท\nคุณคือเจ้าหน้าที่รับเรื่องร้องเรียนของเทศบาลเมืองบ้านสวน\n\n# กติกา\n1. เรื่องร้องเรียนต้องมีสองอย่าง คือปัญหาที่พบ และสถานที่ที่ระบุได้ เช่น ชื่อซอย ถนน หรือสถานที่ใกล้เคียง\n2. ถ้ายังไม่มีสถานที่ ห้ามบันทึก ให้ตอบว่าต้องขอทราบสถานที่ก่อน\n3. เมื่อครบแล้ว เรียก create_complaint หนึ่งครั้ง แล้วตอบเลขที่ที่ได้จากเครื่องมือ พร้อมแจ้งว่าเทศบาลแจ้งผลภายใน 15 วันทำการ\n4. ถ้าถามสถานะและมีเลขที่ BS- ให้เรียก check_ticket แล้วตอบสถานะตามผลที่ได้\n5. ห้ามแต่งเลขที่เรื่องเอง",
+          "maxIterations": 3
+        }
+      }
+    },
+    {
+      "id": "c2",
+      "name": "โมเดลผู้เชี่ยวชาญร้องเรียน",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        860,
+        500
+      ],
+      "parameters": {
+        "model": "qwen2.5:7b",
+        "options": {
+          "temperature": 0,
+          "numCtx": 8192,
+          "numPredict": 768
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "c3c",
+      "name": "create_complaint",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1000,
+        500
+      ],
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "บันทึกเรื่องร้องเรียนใหม่ เรียกเมื่อรู้ทั้งปัญหาและสถานที่แล้วเท่านั้น คืนเลขที่เรื่อง (ticket_no)",
+        "operation": "executeQuery",
+        "query": "-- บันทึกเรื่องร้องเรียนจากผู้ช่วยกลาง ใช้ตารางเดียวกับบทที่ 8 และ 9\n-- เก็บ sessionId ของแชตในคอลัมน์ line_user_id เพื่อหาเรื่องทั้งหมดของผู้ใช้คนเดียวกันได้\nINSERT INTO citizen_requests (channel, kind, message, location, line_user_id)\nVALUES ('chat', 'complaint', $1, $2, $3)\nRETURNING ticket_no, status;",
+        "options": {
+          "queryReplacement": "={{ [$fromAI('problem', 'ปัญหาที่ประชาชนแจ้ง เขียนเป็นประโยคเดียว', 'string'), $fromAI('location', 'สถานที่เกิดเหตุตามที่ประชาชนบอก', 'string'), $('รับข้อความแชต').first().json.sessionId] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "c3k",
+      "name": "check_ticket",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1200,
+        500
+      ],
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "ดูสถานะเรื่องร้องเรียนจากเลขที่ BS- คืนสถานะ หน่วยงานที่รับผิดชอบ และวันครบกำหนด",
+        "operation": "executeQuery",
+        "query": "SELECT ticket_no, status, department, to_char(due_date, 'DD/MM/YYYY') AS due_date\nFROM citizen_requests WHERE ticket_no = upper(trim($1));",
+        "options": {
+          "queryReplacement": "={{ [$fromAI('ticket_no', 'เลขที่เรื่อง ขึ้นต้นด้วย BS- เช่น BS-000123', 'string')] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "รับข้อความแชต": {
+      "main": [
+        [
+          {
+            "node": "ผู้ช่วยกลาง",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "โมเดลหลัก": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "ผู้ช่วยกลาง",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "โมเดลสำรอง": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "ผู้ช่วยกลาง",
+            "type": "ai_languageModel",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "ผู้ช่วยกลาง",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "agent_services": {
+      "ai_tool": [
+        [
+          {
+            "node": "ผู้ช่วยกลาง",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "agent_complaints": {
+      "ai_tool": [
+        [
+          {
+            "node": "ผู้ช่วยกลาง",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "โมเดลผู้เชี่ยวชาญร้องเรียน": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "agent_complaints",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create_complaint": {
+      "ai_tool": [
+        [
+          {
+            "node": "agent_complaints",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_ticket": {
+      "ai_tool": [
+        [
+          {
+            "node": "agent_complaints",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "โมเดลผู้เชี่ยวชาญบริการ": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "agent_services",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "search_documents": {
+      "ai_tool": [
+        [
+          {
+            "node": "agent_services",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Ollama": {
+      "ai_embedding": [
+        [
+          {
+            "node": "search_documents",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -1,0 +1,62 @@
+{
+  "name": "ch05 API สถานะคำสั่งซื้อ",
+  "nodes": [
+    {
+      "id": "s1",
+      "name": "GET สถานะคำสั่งซื้อ",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "ch05-order-status",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "ch05-order-status",
+        "responseMode": "lastNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "s2",
+      "name": "ค้นใบสั่งขาย",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT coalesce((SELECT row_to_json(o) FROM orders o WHERE order_no = upper(trim($1))),\n  '{\"error\": \"ไม่พบเลขที่ใบสั่งขายนี้\"}'::json) AS result;",
+        "options": {
+          "queryReplacement": "={{ $json.query.order }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "GET สถานะคำสั่งซื้อ": {
+      "main": [
+        [
+          {
+            "node": "ค้นใบสั่งขาย",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

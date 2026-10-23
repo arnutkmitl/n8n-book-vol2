@@ -1,0 +1,144 @@
+{
+  "name": "ch11 อ่านภาพใบแจ้งหนี้ด้วยโมเดลภาพ",
+  "nodes": [
+    {
+      "id": "v1",
+      "name": "เริ่ม",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "v2",
+      "name": "อ่านภาพสแกน",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "operation": "read",
+        "fileSelector": "/files/invoices/*-scan.png",
+        "options": {}
+      }
+    },
+    {
+      "id": "v3",
+      "name": "อ่านภาพด้วยโมเดลภาพ",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        420,
+        0
+      ],
+      "parameters": {
+        "promptType": "define",
+        "hasOutputParser": true,
+        "text": "ดึงข้อมูลจากภาพใบแจ้งหนี้ภาษาไทยนี้ คัดลอกตัวเลขตามที่พิมพ์ ห้ามคำนวณใหม่ เลขผู้เสียภาษีให้ใช้ของผู้ขายที่อยู่ใต้ชื่อผู้ขาย",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "HumanMessagePromptTemplate",
+              "messageType": "imageBinary",
+              "binaryImageDataKey": "data",
+              "imageDetail": "high"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "v4",
+      "name": "Ollama qwen2.5vl:3b",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        360,
+        220
+      ],
+      "parameters": {
+        "model": "qwen2.5vl:3b",
+        "options": {
+          "temperature": 0,
+          "numCtx": 8192,
+          "numPredict": 1024
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "v5",
+      "name": "Structured Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        520,
+        220
+      ],
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"invoice_no\": {\n      \"type\": \"string\",\n      \"description\": \"เลขที่ใบแจ้งหนี้ตามที่พิมพ์\"\n    },\n    \"invoice_date\": {\n      \"type\": \"string\",\n      \"description\": \"วันที่ตามที่พิมพ์ เช่น 15/10/2569\"\n    },\n    \"vendor_name\": {\n      \"type\": \"string\",\n      \"description\": \"ชื่อผู้ขาย (ผู้ออกใบแจ้งหนี้) ไม่ใช่ชื่อลูกค้า\"\n    },\n    \"vendor_tax_id\": {\n      \"type\": \"string\",\n      \"description\": \"เลขประจำตัวผู้เสียภาษี 13 หลักของผู้ขาย ไม่ใช่ของลูกค้า\"\n    },\n    \"lines\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"description\": {\n            \"type\": \"string\"\n          },\n          \"qty\": {\n            \"type\": \"number\"\n          },\n          \"unit_price\": {\n            \"type\": \"number\"\n          },\n          \"amount\": {\n            \"type\": \"number\"\n          }\n        },\n        \"required\": [\n          \"description\",\n          \"qty\",\n          \"unit_price\",\n          \"amount\"\n        ]\n      }\n    },\n    \"subtotal\": {\n      \"type\": \"number\",\n      \"description\": \"ยอดรวมก่อนภาษีมูลค่าเพิ่มตามที่พิมพ์\"\n    },\n    \"vat\": {\n      \"type\": \"number\",\n      \"description\": \"ภาษีมูลค่าเพิ่มตามที่พิมพ์\"\n    },\n    \"total\": {\n      \"type\": \"number\",\n      \"description\": \"จำนวนเงินรวมทั้งสิ้นตามที่พิมพ์\"\n    }\n  },\n  \"required\": [\n    \"invoice_no\",\n    \"invoice_date\",\n    \"vendor_name\",\n    \"vendor_tax_id\",\n    \"lines\",\n    \"subtotal\",\n    \"vat\",\n    \"total\"\n  ]\n}"
+      }
+    }
+  ],
+  "connections": {
+    "เริ่ม": {
+      "main": [
+        [
+          {
+            "node": "อ่านภาพสแกน",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "อ่านภาพสแกน": {
+      "main": [
+        [
+          {
+            "node": "อ่านภาพด้วยโมเดลภาพ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama qwen2.5vl:3b": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "อ่านภาพด้วยโมเดลภาพ",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "อ่านภาพด้วยโมเดลภาพ",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

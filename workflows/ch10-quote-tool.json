@@ -1,0 +1,328 @@
+{
+  "name": "ch10 ออกใบเสนอราคา",
+  "nodes": [
+    {
+      "id": "q1",
+      "name": "เมื่อ Agent ขอใบเสนอราคา",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "customer",
+              "type": "string"
+            },
+            {
+              "name": "email",
+              "type": "string"
+            },
+            {
+              "name": "items",
+              "type": "string"
+            },
+            {
+              "name": "session_id",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "q2",
+      "name": "แยกรายการ",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// แยกรายการจากข้อความ เช่น \"BR-6204:20, BT-B52:5\" ราคาไม่รับจากโมเดล จะอ่านจากตาราง products เท่านั้น\nconst q = $json;\nconst items = [...String(q.items || '').matchAll(/([A-Za-z]{2}-[A-Za-z0-9]+)\\s*[:x×=]\\s*(\\d+)/g)]\n  .map(m => ({ sku: m[1].toUpperCase(), qty: Number(m[2]) }));\nconst errors = [];\nif (!q.customer) errors.push('ไม่มีชื่อลูกค้า');\nif (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(q.email || '')) errors.push('อีเมลไม่ถูกต้อง');\nif (items.length === 0) errors.push('ไม่มีรายการสินค้าในรูป รหัส:จำนวน');\nreturn { json: { ...q, parsed: items, skus: items.map(i => i.sku).join(','), errors } };"
+      }
+    },
+    {
+      "id": "q3",
+      "name": "อ่านราคาจากตารางสินค้า",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        400,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT sku, name, unit, price, stock FROM products WHERE sku = ANY(string_to_array($1, ','));",
+        "options": {
+          "queryReplacement": "={{ [$json.skus || '-'] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "q4",
+      "name": "คำนวณใบเสนอราคา",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// คำนวณใบเสนอราคาตามนโยบายเดียวกับ calculate_price ของบทที่ 5 ทีละบรรทัด\nconst q = $('แยกรายการ').item.json;\nconst prices = Object.fromEntries($input.all().filter(i => i.json.sku).map(i => [i.json.sku, i.json]));\nconst round2 = n => Math.round(n * 100) / 100;\nconst errors = [...q.errors];\nconst lines = [];\nfor (const it of q.parsed) {\n  const p = prices[it.sku];\n  if (!p) { errors.push(`ไม่พบรหัสสินค้า ${it.sku}`); continue; }\n  const gross = round2(Number(p.price) * it.qty);\n  const pct = it.qty >= 100 ? 10 : it.qty >= 50 ? 5 : 0;\n  const net = round2(gross - gross * pct / 100);\n  lines.push({ sku: it.sku, name: p.name, unit: p.unit, qty: it.qty, unit_price: Number(p.price),\n               discount_percent: pct, net, in_stock: p.stock >= it.qty, stock: p.stock });\n}\nconst net = round2(lines.reduce((s, l) => s + l.net, 0));\nconst vat = round2(net * 0.07);\nreturn { json: { ok: errors.length === 0, errors, customer: q.customer, email: q.email, session_id: q.session_id,\n                 lines, net, vat, total: round2(net + vat) } };"
+      }
+    },
+    {
+      "id": "q5",
+      "name": "ข้อมูลครบหรือไม่",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        800,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "q6",
+      "name": "บันทึกใบเสนอราคา",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1000,
+        -100
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO quotes (session_id, customer, email, lines, net, vat, total)\nVALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)\nRETURNING id, quote_no, total;",
+        "options": {
+          "queryReplacement": "={{ [$json.session_id, $json.customer, $json.email, JSON.stringify($json.lines), $json.net, $json.vat, $json.total] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "q7",
+      "name": "ส่งให้พนักงานขายตรวจ",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1200,
+        -100
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "ch10 อนุมัติใบเสนอราคา"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "quote_id": "={{ $json.id }}"
+          },
+          "matchingColumns": [
+            "quote_id"
+          ],
+          "schema": [
+            {
+              "id": "quote_id",
+              "displayName": "quote_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      }
+    },
+    {
+      "id": "q8",
+      "name": "ผลสำหรับ Agent",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1400,
+        -100
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "q80",
+              "name": "result",
+              "type": "string",
+              "value": "=สร้างใบเสนอราคา {{ $('บันทึกใบเสนอราคา').item.json.quote_no }} แล้ว ยอดรวม {{ $('บันทึกใบเสนอราคา').item.json.total }} บาท รวม VAT 7% {{ $('คำนวณใบเสนอราคา').item.json.lines.filter(l => !l.in_stock).map(l => l.sku + ' มีสต็อก ' + l.stock + ' ' + l.unit).join(' ') }} พนักงานขายจะตรวจแล้วส่งใบเสนอราคาเป็นไฟล์ PDF ไปที่ {{ $('คำนวณใบเสนอราคา').item.json.email }} ในเวลาทำการ"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "q9",
+      "name": "แจ้งข้อมูลไม่ครบ",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1000,
+        120
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "q90",
+              "name": "result",
+              "type": "string",
+              "value": "=ยังออกใบเสนอราคาไม่ได้: {{ $json.errors.join(', ') }} ให้ถามลูกค้าเพิ่มแล้วเรียกใหม่"
+            }
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "เมื่อ Agent ขอใบเสนอราคา": {
+      "main": [
+        [
+          {
+            "node": "แยกรายการ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "แยกรายการ": {
+      "main": [
+        [
+          {
+            "node": "อ่านราคาจากตารางสินค้า",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "อ่านราคาจากตารางสินค้า": {
+      "main": [
+        [
+          {
+            "node": "คำนวณใบเสนอราคา",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "คำนวณใบเสนอราคา": {
+      "main": [
+        [
+          {
+            "node": "ข้อมูลครบหรือไม่",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ข้อมูลครบหรือไม่": {
+      "main": [
+        [
+          {
+            "node": "บันทึกใบเสนอราคา",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "แจ้งข้อมูลไม่ครบ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "บันทึกใบเสนอราคา": {
+      "main": [
+        [
+          {
+            "node": "ส่งให้พนักงานขายตรวจ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ส่งให้พนักงานขายตรวจ": {
+      "main": [
+        [
+          {
+            "node": "ผลสำหรับ Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

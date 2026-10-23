@@ -1,0 +1,16 @@
+# บทที่ 12 reverse proxy หน้า n8n เปิดออกภายนอกเฉพาะเส้นทางที่ระบบภายนอกต้องเรียก
+# ระบบจริงเปลี่ยน :8088 เป็นชื่อโดเมน เช่น n8n.bansuan.go.th แล้ว Caddy ขอใบรับรอง TLS ให้อัตโนมัติ
+:8088 {
+	# webhook ของ LINE และระบบภายนอก
+	handle /webhook/* {
+		reverse_proxy n8n:5678
+	}
+	# ฟอร์มของ n8n (ถ้าประชาชนต้องกรอกฟอร์ม)
+	handle /form/* {
+		reverse_proxy n8n:5678
+	}
+	# ทางอื่นทั้งหมด รวมหน้า editor, /rest และ /webhook-test ไม่เปิดให้ภายนอก
+	handle {
+		respond "Not found" 404
+	}
+}

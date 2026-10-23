@@ -1,0 +1,130 @@
+{
+  "name": "ch11 รับใบแจ้งหนี้ทางอีเมล",
+  "nodes": [
+    {
+      "id": "i1",
+      "name": "อีเมลถึงฝ่ายบัญชีเจ้าหนี้",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "mailbox": "INBOX",
+        "postProcessAction": "read",
+        "format": "simple",
+        "downloadAttachments": true,
+        "dataPropertyAttachmentsPrefixName": "attachment_",
+        "options": {}
+      },
+      "credentials": {
+        "imap": {
+          "id": "REPLACE",
+          "name": "IMAP ฝ่ายบัญชีเจ้าหนี้"
+        }
+      }
+    },
+    {
+      "id": "i2",
+      "name": "แยกไฟล์แนบ PDF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// อีเมลหนึ่งฉบับอาจมีไฟล์แนบหลายไฟล์ แยกเป็น item ละหนึ่งไฟล์ เฉพาะ PDF\nconst out = [];\nfor (const item of $input.all()) {\n  for (const [key, bin] of Object.entries(item.binary ?? {})) {\n    if (bin.mimeType !== 'application/pdf' && !String(bin.fileName).toLowerCase().endsWith('.pdf')) continue;\n    out.push({ json: { from: item.json.from, subject: item.json.subject, file_name: bin.fileName }, binary: { data: bin } });\n  }\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "i3",
+      "name": "ทีละไฟล์",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        400,
+        0
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "i4",
+      "name": "ส่งไปตรวจ",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        620,
+        100
+      ],
+      "parameters": {
+        "source": "database",
+        "mode": "once",
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "ch11 ตรวจใบแจ้งหนี้"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      }
+    }
+  ],
+  "connections": {
+    "อีเมลถึงฝ่ายบัญชีเจ้าหนี้": {
+      "main": [
+        [
+          {
+            "node": "แยกไฟล์แนบ PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "แยกไฟล์แนบ PDF": {
+      "main": [
+        [
+          {
+            "node": "ทีละไฟล์",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ทีละไฟล์": {
+      "main": [
+        [],
+        [
+          {
+            "node": "ส่งไปตรวจ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ส่งไปตรวจ": {
+      "main": [
+        [
+          {
+            "node": "ทีละไฟล์",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

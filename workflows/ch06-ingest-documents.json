@@ -1,0 +1,229 @@
+{
+  "name": "ch06 นำเข้าเอกสารเทศบาล",
+  "nodes": [
+    {
+      "id": "i1",
+      "name": "เริ่มนำเข้า",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "i2",
+      "name": "อ่านไฟล์เอกสาร",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "operation": "read",
+        "fileSelector": "/files/kb/*.md",
+        "options": {}
+      }
+    },
+    {
+      "id": "i3",
+      "name": "แปลงเป็นข้อความ",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        400,
+        0
+      ],
+      "parameters": {
+        "operation": "text",
+        "options": {}
+      }
+    },
+    {
+      "id": "i4",
+      "name": "ตัดตามหัวข้อ",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// ตัดเอกสารเป็นชิ้นตามหัวข้อระดับ ## และใส่ชื่อเอกสารนำหน้าทุกชิ้น\n// ชิ้นที่ค้นเจอจะบอกได้เองว่ามาจากเอกสารใด แม้ไม่ได้อยู่ต้นไฟล์\nconst files = $('อ่านไฟล์เอกสาร').all();\nconst out = [];\n$input.all().forEach((item, i) => {\n  // แก้สระอำที่ถูกแยกเป็นนิคหิต + สระอา (พบในข้อความที่ดึงจาก PDF)\n  const text = item.json.data.replace(/ํา/g, 'ำ');\n  const lines = text.split('\\n');\n  const title = lines[0].replace(/^#\\s*/, '').trim();\n  const body = lines.slice(1).join('\\n');\n  const sections = body.split(/\\n(?=## )/).map(s => s.trim()).filter(s => s.length > 0);\n  const hasHeadings = sections.some(s => s.startsWith('## '));\n  for (const sec of sections) {\n    // ข้ามส่วนนำก่อนหัวข้อแรก (มักเป็นคำชี้แจงสั้น ๆ) เมื่อเอกสารมีหัวข้อแล้ว\n    if (hasHeadings && !sec.startsWith('## ')) continue;\n    const heading = sec.startsWith('## ') ? sec.split('\\n')[0].replace(/^##\\s*/, '') : 'ส่วนนำ';\n    out.push({ json: {\n      source: files[i].json.fileName,\n      title,\n      section: heading,\n      text: `เอกสาร: ${title}\\n${sec}`,\n    } });\n  }\n});\nreturn out;\n"
+      }
+    },
+    {
+      "id": "i5",
+      "name": "บันทึกลง PGVector",
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePGVector",
+      "typeVersion": 1.3,
+      "position": [
+        820,
+        0
+      ],
+      "parameters": {
+        "mode": "insert",
+        "tableName": "kb_bansuan",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "i6",
+      "name": "Embeddings Ollama",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOllama",
+      "typeVersion": 1,
+      "position": [
+        700,
+        220
+      ],
+      "parameters": {
+        "model": "bge-m3:latest"
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "i7",
+      "name": "Default Data Loader",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        220
+      ],
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.text }}",
+        "textSplittingMode": "custom",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "source",
+                "value": "={{ $json.source }}"
+              },
+              {
+                "name": "title",
+                "value": "={{ $json.title }}"
+              },
+              {
+                "name": "section",
+                "value": "={{ $json.section }}"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "i8",
+      "name": "Recursive Character Text Splitter",
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [
+        980,
+        420
+      ],
+      "parameters": {
+        "chunkSize": 800,
+        "chunkOverlap": 100,
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "เริ่มนำเข้า": {
+      "main": [
+        [
+          {
+            "node": "อ่านไฟล์เอกสาร",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "อ่านไฟล์เอกสาร": {
+      "main": [
+        [
+          {
+            "node": "แปลงเป็นข้อความ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "แปลงเป็นข้อความ": {
+      "main": [
+        [
+          {
+            "node": "ตัดตามหัวข้อ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ตัดตามหัวข้อ": {
+      "main": [
+        [
+          {
+            "node": "บันทึกลง PGVector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Ollama": {
+      "ai_embedding": [
+        [
+          {
+            "node": "บันทึกลง PGVector",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "บันทึกลง PGVector",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recursive Character Text Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Default Data Loader",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

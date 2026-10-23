@@ -1,0 +1,16 @@
+# บทที่ 9 เซิร์ฟเวอร์อีเมลจำลองที่มี IMAP ให้ Email Trigger (IMAP) อ่านกล่องจดหมายงานสารบรรณ
+# ใช้ทดสอบในเครื่องเท่านั้น ข้อมูลหายเมื่อลบ container
+# docker compose -f docker-compose.yml -f compose.greenmail.yml up -d greenmail
+services:
+  greenmail:
+    image: greenmail/standalone:2.1.3
+    restart: unless-stopped
+    environment:
+      # SMTP 3025, IMAP 3143 และสร้างกล่องจดหมายไว้ล่วงหน้า saraban (บทที่ 9) และ ap ฝ่ายบัญชีเจ้าหนี้ (บทที่ 11)
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.setup.test.smtp -Dgreenmail.setup.test.imap
+        -Dgreenmail.hostname=0.0.0.0
+        -Dgreenmail.users=saraban:saraban-lab@bansuan.test,ap:ap-lab@siampart.test
+        -Dgreenmail.users.login=email
+    ports:
+      - "127.0.0.1:3025:3025"

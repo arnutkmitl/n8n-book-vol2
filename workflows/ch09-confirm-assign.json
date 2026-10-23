@@ -1,0 +1,523 @@
+{
+  "name": "ch09 ยืนยันการส่งต่อ",
+  "nodes": [
+    {
+      "id": "c1",
+      "name": "เมื่อได้รับเรื่องที่คัดแยกแล้ว",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "request_id",
+              "type": "number"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c2",
+      "name": "อ่านเรื่อง",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT r.*, d.name AS proposed_name,\n       (SELECT json_agg(code || ' ' || name ORDER BY code) FROM departments) AS dept_options\nFROM citizen_requests r LEFT JOIN departments d ON d.code = r.proposed_department\nWHERE r.id = $1;",
+        "options": {
+          "queryReplacement": "={{ $json.request_id }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "c3",
+      "name": "ขอให้เจ้าหน้าที่ยืนยัน",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "resource": "email",
+        "operation": "sendAndWait",
+        "fromEmail": "saraban-bot@bansuan.test",
+        "toEmail": "saraban@bansuan.test",
+        "subject": "=[{{ $json.urgency }}] ยืนยันการส่งต่อเรื่อง {{ $json.ticket_no }} {{ $json.subject }}",
+        "message": "=เรื่องเลขที่ {{ $json.ticket_no }} รับทาง {{ $json.channel }} เมื่อ {{ DateTime.fromISO($json.created_at).setZone('Asia/Bangkok').toFormat('dd/MM/yyyy HH:mm') }}\nประเภท: {{ $json.doc_type }}\nหัวเรื่อง: {{ $json.subject }}\nสรุปโดย AI: {{ $json.summary }}\nสถานที่: {{ $json.location }}\nAI เสนอส่ง: {{ $json.proposed_name }} ความเร่งด่วน {{ $json.urgency }}\n\nข้อความต้นเรื่อง:\n{{ $json.message }}",
+        "responseType": "customForm",
+        "defineForm": "json",
+        "jsonOutput": "={{ JSON.stringify([{ fieldLabel: 'กองที่รับผิดชอบ', fieldType: 'dropdown', requiredField: true, fieldOptions: { values: $json.dept_options.map(o => ({ option: o })) }, defaultValue: $json.proposed_department + ' ' + $json.proposed_name }, { fieldLabel: 'ประเภทเรื่อง', fieldType: 'dropdown', requiredField: true, fieldOptions: { values: [{ option: 'หนังสือราชการ' }, { option: 'ร้องเรียน' }, { option: 'คำขอรับบริการ' }, { option: 'อื่น ๆ' }] }, defaultValue: $json.doc_type }, { fieldLabel: 'ความเร่งด่วน', fieldType: 'dropdown', requiredField: true, fieldOptions: { values: [{ option: 'ด่วนมาก' }, { option: 'ด่วน' }, { option: 'ปกติ' }] }, defaultValue: $json.urgency }, { fieldLabel: 'การดำเนินการ', fieldType: 'radio', requiredField: true, fieldOptions: { values: [{ option: 'ส่งต่อกองที่เลือก' }, { option: 'ส่งคืนให้งานสารบรรณคัดเอง' }] } }, { fieldLabel: 'หมายเหตุถึงกอง', fieldType: 'textarea' }]) }}",
+        "options": {
+          "appendAttribution": false,
+          "messageButtonLabel": "ตรวจและยืนยัน",
+          "responseFormTitle": "=ยืนยันการส่งต่อเรื่อง {{ $json.ticket_no }}"
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE",
+          "name": "Mailpit lab"
+        }
+      }
+    },
+    {
+      "id": "c4",
+      "name": "ส่งต่อหรือส่งคืน",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a",
+              "leftValue": "={{ $json.data['การดำเนินการ'] }}",
+              "rightValue": "ส่งต่อกองที่เลือก",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c5",
+      "name": "บันทึกการมอบหมาย",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        880,
+        -100
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE citizen_requests\nSET department = $2, urgency = $3, doc_type = $4, status = 'assigned', assigned_at = now(),\n    due_date = current_date + CASE $3 WHEN 'ด่วนมาก' THEN 1 WHEN 'ด่วน' THEN 3 ELSE 15 END\nWHERE id = $1\nRETURNING id, ticket_no, channel, kind, doc_type, sender, contact, line_user_id, subject, summary, message, department, urgency, due_date,\n          to_char(due_date, 'DD/MM/') || (extract(year FROM due_date)::int + 543) AS due_text,\n          (SELECT name FROM departments WHERE code = $2) AS department_name,\n          (SELECT head_email FROM departments WHERE code = $2) AS head_email;",
+        "options": {
+          "queryReplacement": "={{ [$('อ่านเรื่อง').item.json.id, $json.data['กองที่รับผิดชอบ'].split(' ')[0], $json.data['ความเร่งด่วน'], $json.data['ประเภทเรื่อง']] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "c6",
+      "name": "บันทึกการส่งคืน",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        880,
+        120
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE citizen_requests SET status = 'returned' WHERE id = $1 RETURNING id;",
+        "options": {
+          "queryReplacement": "={{ $('อ่านเรื่อง').item.json.id }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "c7",
+      "name": "แจ้งกองที่รับผิดชอบ",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1100,
+        -100
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "resource": "email",
+        "operation": "send",
+        "fromEmail": "saraban-bot@bansuan.test",
+        "toEmail": "={{ $json.head_email }}",
+        "subject": "=[{{ $json.urgency }}] เรื่อง {{ $json.ticket_no }} {{ $json.subject }} กำหนด {{ $json.due_text }}",
+        "emailFormat": "text",
+        "text": "=เรียน หัวหน้า{{ $json.department_name }}\n\nงานสารบรรณมอบหมายเรื่องต่อไปนี้\nเลขที่: {{ $json.ticket_no }}\nประเภท: {{ $json.doc_type }}\nสรุป: {{ $json.summary }}\nความเร่งด่วน: {{ $json.urgency }}\nหมายเหตุจากงานสารบรรณ: {{ $('ขอให้เจ้าหน้าที่ยืนยัน').item.json.data['หมายเหตุถึงกอง'] || '-' }}\n\nข้อความต้นเรื่อง:\n{{ $json.message }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE",
+          "name": "Mailpit lab"
+        }
+      }
+    },
+    {
+      "id": "c8",
+      "name": "ต้องมีหนังสือตอบรับหรือไม่",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1320,
+        -100
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('บันทึกการมอบหมาย').item.json.channel }}",
+                    "rightValue": "line",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "แจ้งทาง LINE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('บันทึกการมอบหมาย').item.json.doc_type }}",
+                    "rightValue": "หนังสือราชการ",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEquals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ร่างหนังสือตอบรับ"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c9",
+      "name": "แจ้งผู้แจ้งทาง LINE",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        -300
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/mock-line/v2/bot/message/push",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ to: $('บันทึกการมอบหมาย').item.json.line_user_id, messages: [{ type: 'text', text: 'เรื่องเลขที่ ' + $('บันทึกการมอบหมาย').item.json.ticket_no + ' ส่งถึง' + $('บันทึกการมอบหมาย').item.json.department_name + ' แล้วค่ะ เทศบาลจะแจ้งผลภายใน 15 วันทำการ' }] }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE",
+          "name": "LINE channel access token"
+        }
+      }
+    },
+    {
+      "id": "c10",
+      "name": "ร่างเนื้อความหนังสือ",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        1540,
+        -100
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "=เขียนเนื้อความหนังสือตอบรับเรื่องจากเทศบาลเมืองบ้านสวนถึงผู้แจ้ง ความยาวสองย่อหน้า ภาษาราชการสุภาพ\nย่อหน้าแรก: อ้างถึงเรื่องที่ผู้แจ้งส่งมา ขึ้นต้นว่า \"ตามที่ท่านได้แจ้งเรื่อง\" แล้วสรุปเรื่องสั้น ๆ\nย่อหน้าที่สอง: แจ้งว่าเทศบาลได้มอบหมายให้{{ $('บันทึกการมอบหมาย').item.json.department_name }}ดำเนินการแล้ว และจะแจ้งผลให้ทราบภายใน 15 วันทำการ\nห้ามรับปากว่าจะแก้ไขเสร็จเมื่อไร ห้ามเขียนว่าดำเนินการแล้วหรือแก้ไขแล้ว เพราะกองเพิ่งได้รับเรื่อง ห้ามใช้คำว่า เร่งด่วน หรือ โดยเร็ว\nห้ามแต่งข้อเท็จจริงที่ไม่มีในต้นเรื่อง ไม่ต้องเขียนคำขึ้นต้น คำลงท้าย หรือลายมือชื่อ\n\nหัวเรื่อง: {{ $('บันทึกการมอบหมาย').item.json.subject }}\nสรุปเรื่อง: {{ $('บันทึกการมอบหมาย').item.json.summary }}"
+      }
+    },
+    {
+      "id": "c11",
+      "name": "Ollama qwen2.5:7b",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        120
+      ],
+      "parameters": {
+        "model": "qwen2.5:7b",
+        "options": {
+          "temperature": 0,
+          "numCtx": 8192,
+          "numPredict": 512
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "c12",
+      "name": "ประกอบหนังสือตอบรับ",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        -100
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// ประกอบหนังสือตอบรับตามแบบหนังสือภายนอกอย่างย่อ ส่วนหัวและท้ายมาจากโค้ด เนื้อความมาจากโมเดล\nconst r = $('บันทึกการมอบหมาย').item.json;\nconst d = DateTime.now().setZone('Asia/Bangkok').setLocale('th');\nconst thaiDate = `${d.day} ${d.toFormat('MMMM')} ${d.year + 543}`;\n// หนังสือราชการไทยไม่ใช้จุดท้ายประโยค โมเดลมักเติมมา จึงลบออก\nconst body = String($json.text || '').trim().replace(/\\.(\\s*\\n|\\s*$)/g, '$1');\nconst letter = [\n  `ที่ บส 52001/${r.ticket_no}`,\n  'สำนักงานเทศบาลเมืองบ้านสวน',\n  '',\n  thaiDate,\n  '',\n  `เรื่อง  ตอบรับเรื่อง ${r.subject}`,\n  '',\n  `เรียน  ${r.sender || 'ผู้แจ้งเรื่อง'}`,\n  '',\n  body,\n  '',\n  'จึงเรียนมาเพื่อโปรดทราบ',\n  '',\n  'ขอแสดงความนับถือ',\n  '',\n  '(ลงชื่อ ................................)',\n  'ปลัดเทศบาล ปฏิบัติราชการแทน',\n  'นายกเทศมนตรีเมืองบ้านสวน',\n  '',\n  'งานสารบรรณ สำนักปลัดเทศบาล โทร 0 4400 1234 ต่อ 100',\n].join('\\n');\nreturn { json: { draft_reply: letter } };"
+      }
+    },
+    {
+      "id": "c13",
+      "name": "บันทึกร่างหนังสือ",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1980,
+        -100
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE citizen_requests SET draft_reply = $2 WHERE id = $1 RETURNING ticket_no, draft_reply;",
+        "options": {
+          "queryReplacement": "={{ [$('บันทึกการมอบหมาย').item.json.id, $json.draft_reply] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "c14",
+      "name": "ส่งร่างให้งานสารบรรณตรวจ",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2200,
+        -100
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "resource": "email",
+        "operation": "send",
+        "fromEmail": "saraban-bot@bansuan.test",
+        "toEmail": "saraban@bansuan.test",
+        "subject": "=ร่างหนังสือตอบรับเรื่อง {{ $json.ticket_no }} (ตรวจแก้ก่อนลงนาม)",
+        "emailFormat": "text",
+        "text": "=ร่างนี้เขียนโดย AI ต้องตรวจข้อเท็จจริงและแก้ถ้อยคำก่อนเสนอลงนาม\nติดต่อผู้แจ้ง: {{ $('บันทึกการมอบหมาย').item.json.contact || 'ไม่ได้ให้ไว้' }}\n\n{{ $json.draft_reply }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE",
+          "name": "Mailpit lab"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "เมื่อได้รับเรื่องที่คัดแยกแล้ว": {
+      "main": [
+        [
+          {
+            "node": "อ่านเรื่อง",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "อ่านเรื่อง": {
+      "main": [
+        [
+          {
+            "node": "ขอให้เจ้าหน้าที่ยืนยัน",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ขอให้เจ้าหน้าที่ยืนยัน": {
+      "main": [
+        [
+          {
+            "node": "ส่งต่อหรือส่งคืน",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ส่งต่อหรือส่งคืน": {
+      "main": [
+        [
+          {
+            "node": "บันทึกการมอบหมาย",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "บันทึกการส่งคืน",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "บันทึกการมอบหมาย": {
+      "main": [
+        [
+          {
+            "node": "แจ้งกองที่รับผิดชอบ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "แจ้งกองที่รับผิดชอบ": {
+      "main": [
+        [
+          {
+            "node": "ต้องมีหนังสือตอบรับหรือไม่",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ต้องมีหนังสือตอบรับหรือไม่": {
+      "main": [
+        [
+          {
+            "node": "แจ้งผู้แจ้งทาง LINE",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ร่างเนื้อความหนังสือ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama qwen2.5:7b": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "ร่างเนื้อความหนังสือ",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ร่างเนื้อความหนังสือ": {
+      "main": [
+        [
+          {
+            "node": "ประกอบหนังสือตอบรับ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ประกอบหนังสือตอบรับ": {
+      "main": [
+        [
+          {
+            "node": "บันทึกร่างหนังสือ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "บันทึกร่างหนังสือ": {
+      "main": [
+        [
+          {
+            "node": "ส่งร่างให้งานสารบรรณตรวจ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

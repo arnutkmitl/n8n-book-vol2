@@ -1,0 +1,364 @@
+{
+  "name": "ch08 LINE API จำลอง",
+  "nodes": [
+    {
+      "id": "m1",
+      "name": "POST reply",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "ch08-mock-m1",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mock-line/v2/bot/message/reply",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "m2",
+      "name": "บันทึก reply ถ้า token ยังใช้ได้",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        220,
+        0
+      ],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- reply token ใช้ได้ครั้งเดียว และต้องใช้ภายใน 60 วินาที เหมือน LINE จริง\nINSERT INTO line_mock_outbox (kind, reply_token, payload)\nSELECT 'reply', $1, $2::jsonb WHERE $3::boolean\nON CONFLICT (reply_token) WHERE reply_token IS NOT NULL DO NOTHING\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$json.body.replyToken, JSON.stringify($json.body), (() => { const m = /^rt-(\\d+)/.exec($json.body.replyToken || ''); return !!m && Date.now() - Number(m[1]) <= 60000 && String($json.headers.authorization || '').startsWith('Bearer '); })()] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "m3",
+      "name": "บันทึกได้หรือไม่",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "x",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "number",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "m4",
+      "name": "ตอบ 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        660,
+        -80
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "m5",
+      "name": "ตอบ 400 Invalid reply token",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        660,
+        80
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"message\": \"Invalid reply token\" }",
+        "options": {
+          "responseCode": 400
+        }
+      }
+    },
+    {
+      "id": "m6",
+      "name": "POST push",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        260
+      ],
+      "webhookId": "ch08-mock-m6",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mock-line/v2/bot/message/push",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "m7",
+      "name": "บันทึก push",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        220,
+        260
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO line_mock_outbox (kind, to_user, payload) VALUES ('push', $1, $2::jsonb) RETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$json.body.to, JSON.stringify($json.body)] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "m8",
+      "name": "ตอบ push 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        440,
+        260
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "m9",
+      "name": "POST loading",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        440
+      ],
+      "webhookId": "ch08-mock-m9",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mock-line/v2/bot/chat/loading/start",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "m10",
+      "name": "ตอบ loading 202",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        220,
+        440
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={}",
+        "options": {
+          "responseCode": 202
+        }
+      }
+    },
+    {
+      "id": "m11",
+      "name": "GET outbox",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        620
+      ],
+      "webhookId": "ch08-mock-m11",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "mock-line/outbox",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "m12",
+      "name": "อ่านข้อความที่ส่งออก",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        220,
+        620
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT coalesce(json_agg(t ORDER BY id), '[]'::json) AS messages FROM (\n  SELECT id, kind, reply_token, to_user, payload->'messages'->0->>'text' AS text, created_at\n  FROM line_mock_outbox WHERE id > $1) t;",
+        "options": {
+          "queryReplacement": "={{ Number($json.query.after || 0) }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "m13",
+      "name": "ตอบรายการข้อความ",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        440,
+        620
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.messages) }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    }
+  ],
+  "connections": {
+    "POST reply": {
+      "main": [
+        [
+          {
+            "node": "บันทึก reply ถ้า token ยังใช้ได้",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "บันทึก reply ถ้า token ยังใช้ได้": {
+      "main": [
+        [
+          {
+            "node": "บันทึกได้หรือไม่",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "บันทึกได้หรือไม่": {
+      "main": [
+        [
+          {
+            "node": "ตอบ 200",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ตอบ 400 Invalid reply token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST push": {
+      "main": [
+        [
+          {
+            "node": "บันทึก push",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "บันทึก push": {
+      "main": [
+        [
+          {
+            "node": "ตอบ push 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST loading": {
+      "main": [
+        [
+          {
+            "node": "ตอบ loading 202",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET outbox": {
+      "main": [
+        [
+          {
+            "node": "อ่านข้อความที่ส่งออก",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "อ่านข้อความที่ส่งออก": {
+      "main": [
+        [
+          {
+            "node": "ตอบรายการข้อความ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -1,0 +1,77 @@
+[
+ {
+  "question": "ค่าขยะบ้านเดือนละเท่าไหร่คะ ทิ้งวันละไม่ถึง 20 ลิตร",
+  "expected": "20 บาท",
+  "should_abstain": false
+ },
+ {
+  "question": "ร้านอาหารเล็ก ๆ เสียค่าขยะเดือนละเท่าไร",
+  "expected": "150",
+  "should_abstain": false
+ },
+ {
+  "question": "ภาษีที่ดินต้องจ่ายภายในวันไหน",
+  "expected": "30 เมษายน",
+  "should_abstain": false
+ },
+ {
+  "question": "ภาษีที่ดินปีนี้ 4,000 บาท ผ่อนจ่ายได้ไหม",
+  "expected": "3 งวด",
+  "should_abstain": false
+ },
+ {
+  "question": "จ่ายภาษีที่ดินช้าไป 2 เดือน เสียเงินเพิ่มเท่าไร",
+  "expected": "ร้อยละ 1/1%",
+  "should_abstain": false
+ },
+ {
+  "question": "อยากขายน้ำปั่นหน้าโรงพยาบาล ค่าใบอนุญาตปีละเท่าไร",
+  "expected": "300",
+  "should_abstain": false
+ },
+ {
+  "question": "วันเสาร์สำนักงานเทศบาลเปิดไหม",
+  "expected": "เสาร์แรก",
+  "should_abstain": false
+ },
+ {
+  "question": "เรียกรถดูดส้วมเที่ยวละเท่าไร",
+  "expected": "300",
+  "should_abstain": false
+ },
+ {
+  "question": "แม่อายุ 80 ต้องไปหาหมอ ขอรถเทศบาลรับส่งได้ไหม",
+  "expected": "ฟรี|410",
+  "should_abstain": false
+ },
+ {
+  "question": "ขอสำเนาข้อมูลข่าวสารราชการ เสียค่าถ่ายเอกสารหน้าละเท่าไร",
+  "expected": "1 บาท",
+  "should_abstain": false
+ },
+ {
+  "question": "หลอดไฟเสียกับถ่านไฟฉายเก่าทิ้งที่ไหน",
+  "expected": "เสาร์แรก",
+  "should_abstain": false
+ },
+ {
+  "question": "ไม่เห็นด้วยกับภาษีที่ประเมินมา คัดค้านได้ภายในกี่วัน",
+  "expected": "30 วัน",
+  "should_abstain": false
+ },
+ {
+  "question": "ขอทำบัตรประชาชนที่เทศบาลได้ไหม",
+  "expected": "",
+  "should_abstain": true
+ },
+ {
+  "question": "ค่าน้ำประปาหน่วยละเท่าไร",
+  "expected": "",
+  "should_abstain": true
+ },
+ {
+  "question": "เทศบาลมีที่จอดรถให้เช่ารายเดือนไหม",
+  "expected": "",
+  "should_abstain": true
+ }
+]

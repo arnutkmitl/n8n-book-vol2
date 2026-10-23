@@ -1,0 +1,119 @@
+{
+  "name": "ch03 ผู้ช่วยธุรการเทศบาล",
+  "nodes": [
+    {
+      "id": "a1",
+      "name": "รับข้อความแชต",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "ch03-admin-assistant",
+      "parameters": {
+        "options": {}
+      }
+    },
+    {
+      "id": "a2",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "options": {
+          "systemMessage": "=คุณคือผู้ช่วยงานธุรการของเทศบาลเมืองบ้านสวน\nช่วยเจ้าหน้าที่ร่างข้อความ สรุปเรื่อง และจดจำรายละเอียดที่เจ้าหน้าที่บอกไว้ในบทสนทนา\nตอบเป็นภาษาไทยสุภาพ กระชับ\nวันนี้คือ {{ $now.setLocale('th').toFormat('cccc d MMMM') }} พ.ศ. {{ $now.year + 543 }}",
+          "maxIterations": 5,
+          "returnIntermediateSteps": true
+        }
+      }
+    },
+    {
+      "id": "a3",
+      "name": "Ollama Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        160,
+        220
+      ],
+      "parameters": {
+        "model": "qwen2.5:3b",
+        "options": {
+          "think": false,
+          "temperature": 0.2,
+          "numCtx": 8192
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "a4",
+      "name": "Postgres Chat Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        360,
+        220
+      ],
+      "parameters": {
+        "tableName": "n8n_chat_histories",
+        "contextWindowLength": 10
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "รับข้อความแชต": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

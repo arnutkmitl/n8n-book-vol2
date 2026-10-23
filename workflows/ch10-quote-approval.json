@@ -1,0 +1,383 @@
+{
+  "name": "ch10 อนุมัติใบเสนอราคา",
+  "nodes": [
+    {
+      "id": "v1",
+      "name": "เมื่อมีใบเสนอราคาใหม่",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "quote_id",
+              "type": "number"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "v2",
+      "name": "อ่านใบเสนอราคา",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM quotes WHERE id = $1;",
+        "options": {
+          "queryReplacement": "={{ $json.quote_id }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "v3",
+      "name": "ขออนุมัติจากพนักงานขาย",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        400,
+        0
+      ],
+      "parameters": {
+        "resource": "email",
+        "operation": "sendAndWait",
+        "fromEmail": "shop-bot@siampart.test",
+        "toEmail": "sales@siampart.test",
+        "subject": "=ตรวจใบเสนอราคา {{ $json.quote_no }} {{ $json.customer }} รวม {{ $json.total }} บาท",
+        "message": "=ใบเสนอราคา {{ $json.quote_no }} ลูกค้า {{ $json.customer }} ({{ $json.email }})\n\n{{ $json.lines.map(l => `${l.sku} ${l.name} ${l.qty} ${l.unit} x ${l.unit_price} บาท ส่วนลด ${l.discount_percent}% = ${l.net} บาท${l.in_stock ? '' : ' (สต็อกมี ' + l.stock + ')'}`).join('\\n') }}\n\nยอดก่อน VAT {{ $json.net }} บาท VAT 7% {{ $json.vat }} บาท รวม {{ $json.total }} บาท\nราคาทุกบรรทัดอ่านจากตาราง products ไม่ได้มาจาก AI ตรวจสต็อกและเงื่อนไขก่อนอนุมัติ",
+        "responseType": "approval",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "approveLabel": "ส่งให้ลูกค้า",
+            "disapproveLabel": "ไม่ส่ง"
+          }
+        },
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE",
+          "name": "Mailpit lab"
+        }
+      }
+    },
+    {
+      "id": "v4",
+      "name": "อนุมัติหรือไม่",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.data.approved }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "v5",
+      "name": "สร้าง HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        -100
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// สร้าง HTML ใบเสนอราคา ฟอนต์ Noto Sans Thai มีอยู่ใน container ของ Gotenberg\nconst q = $('อ่านใบเสนอราคา').item.json;\nconst fmt = n => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });\nconst d = DateTime.now().setZone('Asia/Bangkok');\nconst rows = q.lines.map((l, i) => `<tr><td>${i + 1}</td><td>${l.sku}</td><td>${l.name}</td><td class=\"n\">${l.qty} ${l.unit}</td>\n  <td class=\"n\">${fmt(l.unit_price)}</td><td class=\"n\">${l.discount_percent}%</td><td class=\"n\">${fmt(l.net)}</td></tr>`).join('');\nconst html = `<!doctype html><html><head><meta charset=\"utf-8\"><style>\nbody{font-family:'Noto Sans Thai',sans-serif;font-size:11pt;margin:24px}\nh1{font-size:18pt;margin:0} table{width:100%;border-collapse:collapse;margin-top:16px}\nth,td{border:1px solid #999;padding:4px 6px} th{background:#eee} .n{text-align:right}\n</style></head><body>\n<h1>ใบเสนอราคา</h1>\n<p>บริษัท สยามพาร์ท ซัพพลาย จำกัด (ข้อมูลสมมุติเพื่อการฝึก)<br>เลขที่ ${q.quote_no} วันที่ ${d.day}/${d.month}/${d.year + 543} ยืนราคา 15 วัน</p>\n<p>เรียน ${q.customer}</p>\n<table><tr><th>ลำดับ</th><th>รหัส</th><th>รายการ</th><th>จำนวน</th><th>ราคาต่อหน่วย</th><th>ส่วนลด</th><th>จำนวนเงิน</th></tr>${rows}\n<tr><td colspan=\"6\" class=\"n\">รวมก่อนภาษีมูลค่าเพิ่ม</td><td class=\"n\">${fmt(q.net)}</td></tr>\n<tr><td colspan=\"6\" class=\"n\">ภาษีมูลค่าเพิ่ม 7%</td><td class=\"n\">${fmt(q.vat)}</td></tr>\n<tr><td colspan=\"6\" class=\"n\"><b>รวมทั้งสิ้น</b></td><td class=\"n\"><b>${fmt(q.total)}</b></td></tr></table>\n<p>ยอดซื้อตั้งแต่ 3,000 บาทขึ้นไปส่งฟรี ราคานี้ยังไม่ใช่การยืนยันคำสั่งซื้อ</p></body></html>`;\nreturn { json: { html, quote_no: q.quote_no } };"
+      }
+    },
+    {
+      "id": "v6",
+      "name": "เป็นไฟล์ index.html",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        1000,
+        -100
+      ],
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "html",
+        "options": {
+          "fileName": "index.html"
+        }
+      }
+    },
+    {
+      "id": "v7",
+      "name": "แปลงเป็น PDF ด้วย Gotenberg",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        -100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://gotenberg:3000/forms/chromium/convert/html",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "files",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "v7b",
+      "name": "ตั้งชื่อไฟล์",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        -240
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Gotenberg คืนไฟล์ที่ชื่อเป็นรหัสสุ่ม ตั้งชื่อใหม่ตามเลขที่ใบเสนอราคาก่อนแนบอีเมล\n$input.item.binary.data.fileName = $('สร้าง HTML').item.json.quote_no + '.pdf';\nreturn $input.item;"
+      }
+    },
+    {
+      "id": "v8",
+      "name": "ส่งใบเสนอราคาให้ลูกค้า",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1400,
+        -100
+      ],
+      "parameters": {
+        "resource": "email",
+        "operation": "send",
+        "fromEmail": "sales@siampart.test",
+        "toEmail": "={{ $('อ่านใบเสนอราคา').item.json.email }}",
+        "subject": "=ใบเสนอราคา {{ $('อ่านใบเสนอราคา').item.json.quote_no }} จาก สยามพาร์ท ซัพพลาย",
+        "emailFormat": "text",
+        "text": "=เรียน {{ $('อ่านใบเสนอราคา').item.json.customer }}\n\nบริษัทขอส่งใบเสนอราคาตามไฟล์แนบ ยืนราคา 15 วัน สอบถามเพิ่มเติมตอบกลับอีเมลนี้ได้ครับ\n\nฝ่ายขาย สยามพาร์ท ซัพพลาย",
+        "options": {
+          "attachments": "data",
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE",
+          "name": "Mailpit lab"
+        }
+      }
+    },
+    {
+      "id": "v9",
+      "name": "บันทึกว่าส่งแล้ว",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1600,
+        -100
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE quotes SET status = 'sent', decided_at = now() WHERE id = $1 RETURNING quote_no;",
+        "options": {
+          "queryReplacement": "={{ $('อ่านใบเสนอราคา').item.json.id }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "v10",
+      "name": "บันทึกว่าไม่ส่ง",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        800,
+        120
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE quotes SET status = 'rejected', decided_at = now() WHERE id = $1 RETURNING quote_no;",
+        "options": {
+          "queryReplacement": "={{ $('อ่านใบเสนอราคา').item.json.id }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "เมื่อมีใบเสนอราคาใหม่": {
+      "main": [
+        [
+          {
+            "node": "อ่านใบเสนอราคา",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "อ่านใบเสนอราคา": {
+      "main": [
+        [
+          {
+            "node": "ขออนุมัติจากพนักงานขาย",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ขออนุมัติจากพนักงานขาย": {
+      "main": [
+        [
+          {
+            "node": "อนุมัติหรือไม่",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "อนุมัติหรือไม่": {
+      "main": [
+        [
+          {
+            "node": "สร้าง HTML",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "บันทึกว่าไม่ส่ง",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "สร้าง HTML": {
+      "main": [
+        [
+          {
+            "node": "เป็นไฟล์ index.html",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "เป็นไฟล์ index.html": {
+      "main": [
+        [
+          {
+            "node": "แปลงเป็น PDF ด้วย Gotenberg",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "แปลงเป็น PDF ด้วย Gotenberg": {
+      "main": [
+        [
+          {
+            "node": "ตั้งชื่อไฟล์",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ตั้งชื่อไฟล์": {
+      "main": [
+        [
+          {
+            "node": "ส่งใบเสนอราคาให้ลูกค้า",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ส่งใบเสนอราคาให้ลูกค้า": {
+      "main": [
+        [
+          {
+            "node": "บันทึกว่าส่งแล้ว",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

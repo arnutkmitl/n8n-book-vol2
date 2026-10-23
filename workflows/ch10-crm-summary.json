@@ -1,0 +1,250 @@
+{
+  "name": "ch10 สรุปบทสนทนาเข้า CRM",
+  "nodes": [
+    {
+      "id": "c1",
+      "name": "ทุก 15 นาที",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c0",
+      "name": "รันเองเพื่อทดสอบ",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "c2",
+      "name": "หาบทสนทนาที่จบแล้ว",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        220,
+        100
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- บทสนทนาที่เงียบไปแล้ว 30 นาที และยังไม่ได้สรุป หรือมีข้อความใหม่หลังสรุปครั้งก่อน\nSELECT m.session_id, max(m.created_at) AS last_at,\n       (SELECT string_agg(CASE WHEN h.message->>'type' = 'human' THEN 'ลูกค้า: ' ELSE 'ร้าน: ' END || (h.message->>'content'),\n                          E'\\n' ORDER BY h.id)\n        FROM siampart_chat_histories h WHERE h.session_id = m.session_id) AS transcript,\n       (SELECT string_agg(quote_no || ' ' || total || ' บาท สถานะ ' || CASE status WHEN 'pending' THEN 'รอพนักงานตรวจ ยังไม่ได้ส่งถึงลูกค้า' WHEN 'sent' THEN 'ส่งถึงลูกค้าแล้ว' ELSE 'ไม่ส่ง' END, ', ') FROM quotes q WHERE q.session_id = m.session_id) AS quotes\nFROM chat_metrics m LEFT JOIN crm_conversations c USING (session_id)\nGROUP BY m.session_id, c.updated_at\nHAVING max(m.created_at) < now() - interval '30 minutes'\n   AND (c.updated_at IS NULL OR c.updated_at < max(m.created_at))\n   AND EXISTS (SELECT 1 FROM siampart_chat_histories h WHERE h.session_id = m.session_id)\nLIMIT 20;",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "c3",
+      "name": "ทีละบทสนทนา",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        440,
+        100
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "c4",
+      "name": "สรุปบทสนทนา",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        660,
+        200
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "promptType": "define",
+        "text": "=อ่านบทสนทนาระหว่างลูกค้ากับร้านอะไหล่ สยามพาร์ท ซัพพลาย แล้วสรุปให้พนักงานขาย\n\nบทสนทนา\n{{ $json.transcript }}\n\nใบเสนอราคาที่ออกในบทสนทนานี้: {{ $json.quotes || 'ไม่มี' }}\n\nกติกา\n1. summary สรุปสิ่งที่ลูกค้าต้องการและสิ่งที่ร้านตอบไปแล้ว ไม่เกินสองประโยค\n2. interest_score ให้คะแนนตามเกณฑ์นี้เท่านั้น\n   5 = ขอใบเสนอราคาหรือยืนยันจะสั่งซื้อ\n   4 = ถามราคาพร้อมจำนวนที่ชัดเจน หรือฝากชื่อและเบอร์ให้ติดต่อกลับ\n   3 = ถามราคาหรือสต็อกโดยไม่ระบุจำนวน\n   2 = ถามเฉพาะข้อมูลเทคนิคหรือนโยบาย\n   1 = ไม่เกี่ยวกับการซื้อ\n3. customer_name และ phone ใช้เฉพาะที่อยู่ในบรรทัดที่ขึ้นต้นด้วย ลูกค้า: ห้ามเอาชื่อจากคำตอบของร้าน ถ้าไม่มีให้ตอบว่า ไม่ระบุ\n4. products รหัสสินค้าที่พูดถึง คั่นด้วยจุลภาค ถ้าไม่มีให้ตอบว่า ไม่ระบุ\n5. next_action เลือกหนึ่งข้อ",
+        "hasOutputParser": true
+      }
+    },
+    {
+      "id": "c5",
+      "name": "Ollama qwen2.5:7b",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        600,
+        420
+      ],
+      "parameters": {
+        "model": "qwen2.5:7b",
+        "options": {
+          "temperature": 0,
+          "numCtx": 8192,
+          "numPredict": 1024
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "c6",
+      "name": "Structured Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        780,
+        420
+      ],
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"summary\": {\n      \"type\": \"string\"\n    },\n    \"interest_score\": {\n      \"type\": \"integer\",\n      \"enum\": [\n        1,\n        2,\n        3,\n        4,\n        5\n      ]\n    },\n    \"customer_name\": {\n      \"type\": \"string\"\n    },\n    \"phone\": {\n      \"type\": \"string\"\n    },\n    \"products\": {\n      \"type\": \"string\"\n    },\n    \"next_action\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"โทรติดตาม\",\n        \"ตรวจใบเสนอราคา\",\n        \"ส่งข้อมูลเพิ่ม\",\n        \"ไม่ต้องดำเนินการ\"\n      ]\n    }\n  },\n  \"required\": [\n    \"summary\",\n    \"interest_score\",\n    \"customer_name\",\n    \"phone\",\n    \"products\",\n    \"next_action\"\n  ]\n}"
+      }
+    },
+    {
+      "id": "c7",
+      "name": "บันทึกเข้า CRM",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        900,
+        120
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO crm_conversations (session_id, customer_name, phone, summary, interest_score, products, next_action, updated_at)\nVALUES ($1, $2, $3, $4,\n        -- บทสนทนาที่มีใบเสนอราคาได้ 5 เสมอ ตามข้อเท็จจริงในตาราง quotes ไม่ขึ้นกับโมเดล\n        CASE WHEN EXISTS (SELECT 1 FROM quotes WHERE session_id = $1) THEN 5 ELSE $5 END, $6, $7, now())\nON CONFLICT (session_id) DO UPDATE SET customer_name = EXCLUDED.customer_name, phone = EXCLUDED.phone,\n  summary = EXCLUDED.summary, interest_score = EXCLUDED.interest_score, products = EXCLUDED.products,\n  next_action = EXCLUDED.next_action, updated_at = now()\nRETURNING session_id;",
+        "options": {
+          "queryReplacement": "={{ [$('ทีละบทสนทนา').item.json.session_id, $json.output.customer_name, $json.output.phone, $json.output.summary, $json.output.interest_score, $json.output.products, $json.output.next_action] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "ทุก 15 นาที": {
+      "main": [
+        [
+          {
+            "node": "หาบทสนทนาที่จบแล้ว",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "รันเองเพื่อทดสอบ": {
+      "main": [
+        [
+          {
+            "node": "หาบทสนทนาที่จบแล้ว",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "หาบทสนทนาที่จบแล้ว": {
+      "main": [
+        [
+          {
+            "node": "ทีละบทสนทนา",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ทีละบทสนทนา": {
+      "main": [
+        [],
+        [
+          {
+            "node": "สรุปบทสนทนา",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama qwen2.5:7b": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "สรุปบทสนทนา",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "สรุปบทสนทนา",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "สรุปบทสนทนา": {
+      "main": [
+        [
+          {
+            "node": "บันทึกเข้า CRM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ทีละบทสนทนา",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "บันทึกเข้า CRM": {
+      "main": [
+        [
+          {
+            "node": "ทีละบทสนทนา",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -1,0 +1,278 @@
+{
+  "name": "ch09 ติดตามเรื่องค้าง",
+  "nodes": [
+    {
+      "id": "o1",
+      "name": "ทุกวันทำการ 08:30",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 8 * * 1-5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "o2",
+      "name": "หาเรื่องค้าง",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- เรื่องที่ส่งกองแล้วยังไม่ปิด แจ้งเตือนเมื่อค้างครบ 3, 7 และ 15 วัน ระดับละครั้งเดียว\nWITH x AS (\n  SELECT r.id, r.ticket_no, r.subject, r.urgency, r.department, r.last_alert_days, d.name AS dept_name, d.head_email,\n         current_date - r.assigned_at::date AS age_days\n  FROM citizen_requests r JOIN departments d ON d.code = r.department\n  WHERE r.status = 'assigned'\n)\nSELECT *, CASE WHEN age_days >= 15 THEN 15 WHEN age_days >= 7 THEN 7 WHEN age_days >= 3 THEN 3 ELSE 0 END AS level\nFROM x\nWHERE CASE WHEN age_days >= 15 THEN 15 WHEN age_days >= 7 THEN 7 WHEN age_days >= 3 THEN 3 ELSE 0 END > last_alert_days\nORDER BY department, age_days DESC;",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "o3",
+      "name": "รวมตามกอง",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// รวมเรื่องค้างเป็นอีเมลฉบับเดียวต่อกองต่อระดับ ค้างครบ 15 วันส่งสำเนาถึงปลัดเทศบาล\nconst groups = {};\nfor (const { json: r } of $input.all()) {\n  const key = r.department + ':' + r.level;\n  groups[key] ??= { to: r.head_email, dept: r.dept_name, level: r.level, rows: [] };\n  groups[key].rows.push(r);\n}\nreturn Object.values(groups).map(g => ({ json: {\n  to: g.to,\n  cc: g.level >= 15 ? 'palad@bansuan.test' : '',\n  subject: `เรื่องค้างครบ ${g.level} วัน ${g.rows.length} เรื่อง (${g.dept})`,\n  body: `เรียน หัวหน้า${g.dept}\\n\\nเรื่องต่อไปนี้ส่งถึงกองแล้วยังไม่ปิดเรื่อง\\n\\n` +\n        g.rows.map(r => `${r.ticket_no} [${r.urgency}] ${r.subject} ค้าง ${r.age_days} วัน`).join('\\n') +\n        '\\n\\nเมื่อดำเนินการเสร็จ กรุณาแจ้งงานสารบรรณเพื่อปิดเรื่อง',\n  level: g.level,\n  ids: g.rows.map(r => r.id).join(','),\n} }));"
+      }
+    },
+    {
+      "id": "o4",
+      "name": "แจ้งหัวหน้ากอง",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        660,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "resource": "email",
+        "operation": "send",
+        "fromEmail": "saraban-bot@bansuan.test",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.body }}",
+        "options": {
+          "appendAttribution": false,
+          "ccEmail": "={{ $json.cc }}"
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE",
+          "name": "Mailpit lab"
+        }
+      }
+    },
+    {
+      "id": "o5",
+      "name": "บันทึกระดับที่แจ้งแล้ว",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE citizen_requests SET last_alert_days = $1 WHERE id = ANY(string_to_array($2, ',')::int[]) RETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$('รวมตามกอง').item.json.level, $('รวมตามกอง').item.json.ids] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "o6",
+      "name": "ทุกวันจันทร์ 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        260
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "o7",
+      "name": "สรุปตามกอง",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        220,
+        260
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT d.name AS dept_name,\n       count(*) FILTER (WHERE r.assigned_at >= now() - interval '7 days') AS assigned_week,\n       count(*) FILTER (WHERE r.closed_at >= now() - interval '7 days') AS closed_week,\n       count(*) FILTER (WHERE r.status = 'assigned') AS open_now,\n       count(*) FILTER (WHERE r.status = 'assigned' AND r.due_date < current_date) AS overdue_now\nFROM departments d LEFT JOIN citizen_requests r ON r.department = d.code\nGROUP BY d.code, d.name ORDER BY d.code;",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "o8",
+      "name": "เขียนรายงาน",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        260
+      ],
+      "parameters": {
+        "jsCode": "// รายงานรายสัปดาห์ถึงปลัดเทศบาล\nconst rows = $input.all().map(i => i.json);\nconst lines = rows.map(r => `${r.dept_name}: รับใหม่ ${r.assigned_week} ปิดแล้ว ${r.closed_week} ค้าง ${r.open_now} (เกินกำหนด ${r.overdue_now})`);\nconst total = rows.reduce((s, r) => s + Number(r.overdue_now), 0);\nreturn [{ json: {\n  subject: `รายงานเรื่องรับประจำสัปดาห์ เกินกำหนด ${total} เรื่อง`,\n  body: 'เรียน ปลัดเทศบาล\\n\\nสรุปเรื่องรับย้อนหลัง 7 วัน แยกตามกอง\\n\\n' + lines.join('\\n') +\n        '\\n\\nเรื่องที่ยังไม่คัดแยกหรือรอเจ้าหน้าที่ยืนยัน ดูได้ที่ตาราง citizen_requests สถานะ new, triaged และ returned',\n} }];"
+      }
+    },
+    {
+      "id": "o9",
+      "name": "ส่งรายงานถึงปลัดเทศบาล",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        660,
+        260
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "resource": "email",
+        "operation": "send",
+        "fromEmail": "saraban-bot@bansuan.test",
+        "toEmail": "palad@bansuan.test",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.body }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE",
+          "name": "Mailpit lab"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "ทุกวันทำการ 08:30": {
+      "main": [
+        [
+          {
+            "node": "หาเรื่องค้าง",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "หาเรื่องค้าง": {
+      "main": [
+        [
+          {
+            "node": "รวมตามกอง",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "รวมตามกอง": {
+      "main": [
+        [
+          {
+            "node": "แจ้งหัวหน้ากอง",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "แจ้งหัวหน้ากอง": {
+      "main": [
+        [
+          {
+            "node": "บันทึกระดับที่แจ้งแล้ว",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ทุกวันจันทร์ 08:00": {
+      "main": [
+        [
+          {
+            "node": "สรุปตามกอง",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "สรุปตามกอง": {
+      "main": [
+        [
+          {
+            "node": "เขียนรายงาน",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "เขียนรายงาน": {
+      "main": [
+        [
+          {
+            "node": "ส่งรายงานถึงปลัดเทศบาล",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

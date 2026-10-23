@@ -1,0 +1,375 @@
+{
+  "name": "ch04 คัดแยกเรื่องร้องเรียน",
+  "nodes": [
+    {
+      "id": "c1",
+      "name": "รับเรื่องร้องเรียน",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "ch04-complaint",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ch04-complaint",
+        "responseMode": "lastNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "c2",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.body.text }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=# บทบาท\nคุณคือเจ้าหน้าที่คัดแยกเรื่องร้องเรียนของเทศบาลเมืองบ้านสวน\n\n# บริบท\nวันนี้คือ {{ $now.setLocale('th').toFormat('cccc d MMMM') }} พ.ศ. {{ $now.year + 543 }} เวลา {{ $now.toFormat('HH:mm') }} น.\nเรื่องร้องเรียนมาจากประชาชนผ่าน LINE OA เว็บไซต์ และโทรศัพท์ เจ้าหน้าที่จะอ่านผลของคุณเพื่อส่งเรื่องให้กองที่รับผิดชอบ\n\n# งาน\nอ่านข้อความร้องเรียนหนึ่งเรื่อง แล้วสรุปเป็นข้อมูลตามรูปแบบที่กำหนด\n\n# กติกา\n1. ประเภท เลือกจากรายการนี้เท่านั้น: ถนนและทางเท้า, ไฟฟ้าส่องสว่าง, ขยะและความสะอาด, น้ำและท่อระบายน้ำ, เหตุรำคาญ, อื่น ๆ\n2. ความเร่งด่วน\n   - ด่วนมาก: มีอันตรายต่อชีวิตหรือทรัพย์สินตอนนี้ เช่น สายไฟขาด ต้นไม้ล้มขวางถนนจนรถผ่านไม่ได้ น้ำท่วมเข้าบ้าน ท่อแตกน้ำพุ่ง สัตว์ทำร้ายคนแล้ว\n   - ด่วน: กระทบคนจำนวนมากหรือเป็นมาหลายวัน เช่น ไฟดับทั้งซอย ขยะไม่เก็บเกินสามวัน\n   - ปกติ: เรื่องอื่นทั้งหมด เช่น ไฟดับดวงเดียว เสียงดังรบกวน ขอถังขยะ ทางเท้าชำรุด\n3. สถานที่ ใช้ถ้อยคำตามที่ผู้ร้องเขียน ถ้าไม่ระบุให้ตอบว่า \"ไม่ระบุ\" ห้ามเดาเอง\n4. สรุป เขียนหนึ่งประโยค ไม่เกิน 40 คำ ภาษาราชการสุภาพ ไม่ใส่ความเห็นของคุณ\n   ห้ามมีชื่อคน เบอร์โทร หรือเลขบัตรประชาชนในสรุป เพราะสรุปจะถูกส่งต่อให้หลายกอง\n5. ต้องการติดต่อกลับ เป็น true เมื่อผู้ร้องขอให้ติดต่อกลับ ขอให้แจ้งผล ขอให้โทรบอก หรือให้เบอร์โทรไว้ นอกนั้นเป็น false\n\n# รูปแบบคำตอบ\nตอบตามโครงสร้างที่ระบบกำหนดเท่านั้น ไม่มีข้อความอื่นนำหน้าหรือตามหลัง\n\n# สิ่งที่ห้ามทำ\n- ห้ามรับปากว่าจะแก้ไขเมื่อไร\n- ห้ามคัดลอกเบอร์โทรศัพท์หรือเลขบัตรประชาชนลงในช่องสรุป",
+          "maxIterations": 5
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "c3",
+      "name": "Ollama Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        200,
+        220
+      ],
+      "parameters": {
+        "model": "qwen2.5:3b",
+        "options": {
+          "temperature": 0,
+          "numCtx": 8192,
+          "numPredict": 512
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "REPLACE",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "id": "c4",
+      "name": "Structured Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        420,
+        220
+      ],
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"category\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"ถนนและทางเท้า\",\n        \"ไฟฟ้าส่องสว่าง\",\n        \"ขยะและความสะอาด\",\n        \"น้ำและท่อระบายน้ำ\",\n        \"เหตุรำคาญ\",\n        \"อื่น ๆ\"\n      ],\n      \"description\": \"ประเภทเรื่องร้องเรียน\"\n    },\n    \"urgency\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"ด่วนมาก\",\n        \"ด่วน\",\n        \"ปกติ\"\n      ],\n      \"description\": \"ความเร่งด่วน\"\n    },\n    \"location\": {\n      \"type\": \"string\",\n      \"description\": \"สถานที่ตามที่ผู้ร้องระบุ หรือ ไม่ระบุ\"\n    },\n    \"summary\": {\n      \"type\": \"string\",\n      \"description\": \"สรุปเรื่องหนึ่งประโยค\"\n    },\n    \"callback\": {\n      \"type\": \"boolean\",\n      \"description\": \"ผู้ร้องต้องการให้ติดต่อกลับหรือไม่\"\n    }\n  },\n  \"required\": [\n    \"category\",\n    \"urgency\",\n    \"location\",\n    \"summary\",\n    \"callback\"\n  ]\n}",
+        "autoFix": true,
+        "customizeRetryPrompt": true,
+        "prompt": "=Original complaint text (use ONLY facts from this text):\n--------------\n{{ $('รับเรื่องร้องเรียน').item.json.body.text.replace(/[{}]/g, '') }}\n--------------\nInstructions:\n--------------\n{instructions}\n--------------\nCompletion:\n--------------\n{completion}\n--------------\n\nThe Completion above did not satisfy the Instructions.\nError:\n--------------\n{error}\n--------------\n\nAnswer again with JSON only.\nThe JSON must have exactly one top-level key named \"output\",\nand every field (category, urgency, location, summary, callback) must be inside \"output\"."
+      }
+    },
+    {
+      "id": "c5",
+      "name": "แยกตามความเร่งด่วน",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        620,
+        0
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "ด่วนมาก",
+                    "leftValue": "={{ $json.output.urgency }}",
+                    "rightValue": "ด่วนมาก",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ด่วนมาก"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "ด่วน",
+                    "leftValue": "={{ $json.output.urgency }}",
+                    "rightValue": "ด่วน",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ด่วน"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "ปกติ",
+                    "leftValue": "={{ $json.output.urgency }}",
+                    "rightValue": "ปกติ",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ปกติ"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "ตรวจด้วยคน"
+        }
+      }
+    },
+    {
+      "id": "c6",
+      "name": "แจ้งเวรฉุกเฉิน",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        -240
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c6a",
+              "name": "route",
+              "value": "แจ้งเวรฉุกเฉินทันที",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c7",
+      "name": "ส่งกองภายในวันนี้",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        -80
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c7a",
+              "name": "route",
+              "value": "ส่งกองที่รับผิดชอบภายในวันนี้",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c8",
+      "name": "เข้าคิวปกติ",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        80
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c8a",
+              "name": "route",
+              "value": "เข้าคิวงานปกติ",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c9",
+      "name": "ส่งเจ้าหน้าที่ตรวจ",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        240
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c9a",
+              "name": "route",
+              "value": "ส่งเจ้าหน้าที่ตรวจเอง",
+              "type": "string"
+            },
+            {
+              "id": "c90",
+              "name": "text",
+              "value": "={{ $('รับเรื่องร้องเรียน').item.json.body.text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "รับเรื่องร้องเรียน": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Structured Output Parser",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "แยกตามความเร่งด่วน",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ส่งเจ้าหน้าที่ตรวจ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "แยกตามความเร่งด่วน": {
+      "main": [
+        [
+          {
+            "node": "แจ้งเวรฉุกเฉิน",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ส่งกองภายในวันนี้",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "เข้าคิวปกติ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ส่งเจ้าหน้าที่ตรวจ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

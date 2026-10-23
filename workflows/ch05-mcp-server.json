@@ -1,0 +1,98 @@
+{
+  "name": "ch05 MCP Server สยามพาร์ท",
+  "nodes": [
+    {
+      "id": "m1",
+      "name": "MCP Server Trigger",
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        0
+      ],
+      "webhookId": "ch05-siampart-mcp",
+      "parameters": {
+        "authentication": "bearerAuth",
+        "path": "siampart",
+        "instructions": "เครื่องมือของบริษัท สยามพาร์ท ซัพพลาย: ค้นหาสินค้าในคลัง และคำนวณราคาพร้อมส่วนลดและ VAT"
+      },
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE",
+          "name": "MCP siampart token"
+        }
+      }
+    },
+    {
+      "id": "t1",
+      "name": "search_products",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        200,
+        260
+      ],
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "ค้นหาสินค้าจากชื่อ รหัส หรือรุ่นเครื่องที่ใช้ได้ คืนรหัส ชื่อ หน่วย ราคาต่อหน่วยยังไม่รวม VAT และจำนวนคงเหลือ ใช้ทุกครั้งที่ลูกค้าถามเรื่องสินค้า ราคา หรือสต็อก",
+        "operation": "executeQuery",
+        "query": "-- แยกคำค้นด้วยช่องว่าง สินค้าต้องมีทุกคำ (ในชื่อ รุ่นที่ใช้ได้ หรือรหัส)\nSELECT sku, name, fits, unit,\n       price AS price_per_unit_excl_vat,\n       stock AS stock_qty\nFROM products p\nWHERE NOT EXISTS (\n  SELECT 1 FROM unnest(string_to_array(trim($1), ' ')) AS w\n  WHERE w <> ''\n    AND (p.name || ' ' || coalesce(p.fits, '') || ' ' || p.sku) NOT ILIKE '%' || w || '%'\n)\nLIMIT 5;",
+        "options": {
+          "queryReplacement": "={{ $fromAI('keyword', 'คำค้นหนึ่งถึงสามคำ คั่นด้วยช่องว่าง เช่น 6204 หรือ สายพาน 60 หรือ ยาง 6-12', 'string') }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    },
+    {
+      "id": "t2",
+      "name": "calculate_price",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        360,
+        260
+      ],
+      "parameters": {
+        "description": "คำนวณราคาขายรวมตามจำนวน พร้อมส่วนลดตามนโยบายบริษัทและ VAT 7% ใช้ทุกครั้งที่ต้องบอกราคารวม",
+        "language": "javaScript",
+        "jsCode": "// คำนวณราคาขายตามนโยบายบริษัท: ส่วนลดตามจำนวน แล้วบวก VAT 7%\nconst unitPrice = Number(query.unit_price);\nconst qty = Number(query.qty);\nif (!(unitPrice > 0) || !(qty > 0)) {\n  return 'ข้อมูลไม่ครบ ต้องมี unit_price และ qty ที่มากกว่า 0';\n}\nconst round2 = (n) => Math.round(n * 100) / 100;\nconst subtotal = round2(unitPrice * qty);\nconst discountRate = qty >= 100 ? 10 : qty >= 50 ? 5 : 0;   // 50 ชิ้นขึ้นไปลด 5%, 100 ชิ้นขึ้นไปลด 10%\nconst discount = round2(subtotal * discountRate / 100);\nconst net = round2(subtotal - discount);\nconst vat = round2(net * 0.07);\nconst total = round2(net + vat);\nreturn JSON.stringify({\n  subtotal: subtotal,\n  discount_percent: discountRate,\n  discount: discount,\n  net: net,\n  vat_7: vat,\n  total_incl_vat: total,\n});",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"unit_price\": {\n      \"type\": \"number\",\n      \"description\": \"ราคาต่อหน่วยยังไม่รวม VAT จากเครื่องมือ search_products\"\n    },\n    \"qty\": {\n      \"type\": \"number\",\n      \"description\": \"จำนวนที่ลูกค้าต้องการ\"\n    }\n  },\n  \"required\": [\n    \"unit_price\",\n    \"qty\"\n  ]\n}"
+      }
+    }
+  ],
+  "connections": {
+    "search_products": {
+      "ai_tool": [
+        [
+          {
+            "node": "MCP Server Trigger",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calculate_price": {
+      "ai_tool": [
+        [
+          {
+            "node": "MCP Server Trigger",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

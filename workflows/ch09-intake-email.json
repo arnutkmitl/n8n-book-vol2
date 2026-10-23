@@ -1,0 +1,67 @@
+{
+  "name": "ch09 รับเรื่องทางอีเมล",
+  "nodes": [
+    {
+      "id": "e1",
+      "name": "อีเมลเข้ากล่องสารบรรณ",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "mailbox": "INBOX",
+        "postProcessAction": "read",
+        "format": "simple",
+        "options": {}
+      },
+      "credentials": {
+        "imap": {
+          "id": "REPLACE",
+          "name": "IMAP งานสารบรรณ"
+        }
+      }
+    },
+    {
+      "id": "e2",
+      "name": "บันทึกเรื่องรับ",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO citizen_requests (channel, kind, sender, contact, subject, message, location, source_ref)\nVALUES ($1, 'incoming', $2, $3, $4, $5, $6, $7)\nON CONFLICT (source_ref) WHERE source_ref IS NOT NULL DO NOTHING\nRETURNING id, ticket_no;",
+        "options": {
+          "queryReplacement": "={{ ['email', $json.from.replace(/<.*>/, '').trim() || $json.from, $json.from, $json.subject, ($json.textPlain || $json.text || '').slice(0, 8000), null, $json.metadata?.['message-id'] || $json.messageId || null] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE",
+          "name": "Postgres lab"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "อีเมลเข้ากล่องสารบรรณ": {
+      "main": [
+        [
+          {
+            "node": "บันทึกเรื่องรับ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
